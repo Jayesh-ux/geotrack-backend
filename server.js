@@ -34,6 +34,9 @@ import quickVisitsRoutes from './routes/quickVisits.routes.js';
 
 const app = express();
 
+// IMMEDIATE HEALTH CHECK
+app.get("/ping", (req, res) => res.status(200).send("PONG - Server is alive"));
+
 // Middleware
 app.use(cors({
   origin: CORS_ORIGIN,
