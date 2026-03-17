@@ -25,16 +25,17 @@ async function run() {
 
         console.log("\n✨ All migrations completed successfully!");
     } catch (err) {
-        if (err.message.includes("permission denied")) {
+        if (err?.message?.includes("permission denied")) {
             console.error("\n❌ Permission Denied: You must be a PostgreSQL superuser to enable PostGIS extensions.");
             console.error("💡 On Render, this is usually handled automatically if the extension is pre-installed.");
         } else {
-            console.error("\n❌ Migration failed:", err.message);
-            console.error(err.stack);
+            console.error("\n❌ Migration failed:", err?.message || err);
         }
-        process.exit(1);
+        console.error("🚨 Continuing anyway so the server can start! Check your Render DB logs.");
+        // We explicitly DO NOT process.exit(1) here so the server can boot and we can debug.
     } finally {
-        await pool.end();
+        // Only end the pool if we actually connect
+        try { await pool.end(); } catch (e) {}
     }
 }
 
