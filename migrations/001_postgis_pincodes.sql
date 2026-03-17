@@ -9,6 +9,8 @@
 -- These are built-in to standard PostgreSQL.
 CREATE EXTENSION IF NOT EXISTS cube;
 CREATE EXTENSION IF NOT EXISTS earthdistance;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- STEP 2: Create the pincodes lookup table
 -- This is the core of our self-learning location database.

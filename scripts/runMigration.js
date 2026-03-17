@@ -1,27 +1,38 @@
 // scripts/runMigration.js
 import { pool } from "../db.js";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import { resolve } from "path";
 
 async function run() {
-    console.log("🚀 Starting local migration...");
+    console.log("🚀 Starting database migrations...");
 
     try {
-        const migrationPath = resolve("migrations/001_postgis_pincodes.sql");
-        const sql = readFileSync(migrationPath, "utf8");
+        const migrationsDir = resolve("migrations");
+        const files = readdirSync(migrationsDir)
+            .filter(f => f.endsWith(".sql"))
+            .sort();
 
-        // Split SQL by semicolor (simple split, won't work with functions/triggers, but for this SQL it's fine)
-        // Actually, pg pool.query() can handle multiple commands if it's one big string.
-        await pool.query(sql);
+        console.log(`📦 Found ${files.length} migration files.`);
 
-        console.log("✅ Migration successful!");
-        console.log("📍 PostGIS extensions & pincodes table are now ready.");
+        for (const file of files) {
+            console.log(`🛠️  Running migration: ${file}...`);
+            const sql = readFileSync(resolve(migrationsDir, file), "utf8");
+            
+            // Execute the entire SQL file
+            await pool.query(sql);
+            console.log(`✅ Finished: ${file}`);
+        }
+
+        console.log("\n✨ All migrations completed successfully!");
     } catch (err) {
         if (err.message.includes("permission denied")) {
-            console.error("❌ Permission Denied: You must be a PostgreSQL superuser to enable PostGIS extensions.");
+            console.error("\n❌ Permission Denied: You must be a PostgreSQL superuser to enable PostGIS extensions.");
+            console.error("💡 On Render, this is usually handled automatically if the extension is pre-installed.");
         } else {
-            console.error("❌ Migration failed:", err.message);
+            console.error("\n❌ Migration failed:", err.message);
+            console.error(err.stack);
         }
+        process.exit(1);
     } finally {
         await pool.end();
     }
