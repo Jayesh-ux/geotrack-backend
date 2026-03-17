@@ -192,12 +192,22 @@ CREATE TABLE IF NOT EXISTS "tally_sync_log" (
 );
 
 CREATE TABLE IF NOT EXISTS "pincodes" (
-  "postal_code" text NOT NULL,
-  "latitude" double precision,
-  "longitude" double precision,
-  "city" text,
-  "state" text
+  "id" SERIAL PRIMARY KEY,
+  "postal_code" VARCHAR(20) UNIQUE NOT NULL,
+  "latitude" double precision NOT NULL,
+  "longitude" double precision NOT NULL,
+  "city" VARCHAR(100),
+  "state" VARCHAR(100),
+  "created_at" TIMESTAMPTZ DEFAULT now()
 );
+
+-- Spatial index for nearest-pincode lookups
+CREATE INDEX IF NOT EXISTS "idx_pincodes_spatial"
+  ON "pincodes" USING gist (ll_to_earth("latitude", "longitude"));
+
+-- Standard index for direct portalcode lookups
+CREATE INDEX IF NOT EXISTS "idx_pincodes_postal_code"
+  ON "pincodes" ("postal_code");
 
 CREATE TABLE IF NOT EXISTS "tally_sync_conflicts" (
   "id" uuid NOT NULL DEFAULT gen_random_uuid(),

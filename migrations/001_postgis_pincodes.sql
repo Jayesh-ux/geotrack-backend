@@ -12,46 +12,7 @@ CREATE EXTENSION IF NOT EXISTS earthdistance;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- STEP 2: Create the pincodes lookup table
--- This is the core of our self-learning location database.
-CREATE TABLE IF NOT EXISTS pincodes (
-    id          SERIAL PRIMARY KEY,
-    postal_code VARCHAR(20) UNIQUE NOT NULL,
-    latitude    DOUBLE PRECISION   NOT NULL,
-    longitude   DOUBLE PRECISION   NOT NULL,
-    city        VARCHAR(100),
-    state       VARCHAR(100),
-    created_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- STEP 3: Create spatial index for ultra-fast nearest-pincode lookups (<5ms)
-CREATE INDEX IF NOT EXISTS idx_pincodes_spatial
-    ON pincodes USING gist (ll_to_earth(latitude, longitude));
-
--- Standard B-tree index for direct postalcode lookups
-CREATE INDEX IF NOT EXISTS idx_pincodes_postalcode
-    ON pincodes (postal_code);
-
--- STEP 4: Create client_location_cache for self-learned client positions
--- When an agent visits a client and GPS-tags them, we store it here.
--- Future lookups for the same client skip the Google API entirely.
-CREATE TABLE IF NOT EXISTS client_location_cache (
-    id          SERIAL PRIMARY KEY,
-    client_id   INTEGER UNIQUE NOT NULL,
-    latitude    DOUBLE PRECISION NOT NULL,
-    longitude   DOUBLE PRECISION NOT NULL,
-    pincode     VARCHAR(20),
-    source      VARCHAR(50) DEFAULT 'agent_gps', -- 'agent_gps' | 'google_api' | 'manual'
-    confidence  SMALLINT DEFAULT 100,            -- 0-100 confidence score
-    tagged_by   INTEGER,                         -- user_id who tagged it
-    created_at  TIMESTAMPTZ DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_client_location_cache_client_id
-    ON client_location_cache (client_id);
-
--- STEP 4.5: Add proximity columns to meetings table
+-- STEP 4.5: Add proximity columns to meetings table (if not in main schema)
 ALTER TABLE meetings 
 ADD COLUMN IF NOT EXISTS proximity_verified BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS proximity_distance DOUBLE PRECISION,

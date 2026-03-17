@@ -175,7 +175,7 @@ async function main() {
 
         // Verify the spatial index works
         const test = await pool.query(`
-      SELECT postalcode, city,
+      SELECT postal_code, city,
              earth_distance(ll_to_earth(latitude, longitude), ll_to_earth(18.9322, 72.8264)) AS dist
       FROM pincodes
       ORDER BY ll_to_earth(latitude, longitude) <-> ll_to_earth(18.9322, 72.8264)
