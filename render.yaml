@@ -4,9 +4,8 @@ services:
     env: node
     plan: free
     buildCommand: "npm install"
-    # Run the migrations script before starting the server
-    preDeployCommand: "node scripts/runMigration.js"
-    startCommand: "npm start"
+    # For free tier, we combine migration and start in one command
+    startCommand: "node scripts/runMigration.js && npm start"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
