@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS "tally_sync_queue" (
 );
 
 CREATE TABLE IF NOT EXISTS "users" (
-  "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "email" text NOT NULL,
   "password" text NOT NULL,
   "reset_token" text,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS "tally_sync_history" (
 );
 
 CREATE TABLE IF NOT EXISTS "clients" (
-  "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "name" text NOT NULL,
   "email" text,
   "phone" text,
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS "clients" (
 );
 
 CREATE TABLE IF NOT EXISTS "profiles" (
-  "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "user_id" uuid NOT NULL,
   "email" text,
   "full_name" text,
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS "profiles" (
 );
 
 CREATE TABLE IF NOT EXISTS "location_logs" (
-  "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
   "user_id" uuid NOT NULL,
   "latitude" double precision NOT NULL,
   "longitude" double precision NOT NULL,
