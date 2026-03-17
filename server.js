@@ -1,5 +1,10 @@
 // server.js
-// UPDATED: Added plan features and limitations
+console.log("==========================================");
+console.log("🚀 BACKEND STARTING UP...");
+console.log("📅 TIME:", new Date().toISOString());
+console.log("🔌 PORT:", process.env.PORT || 5000);
+console.log("🌍 NODE_ENV:", process.env.NODE_ENV);
+console.log("==========================================");
 
 import express from "express";
 import cors from "cors";
