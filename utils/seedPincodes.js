@@ -82,7 +82,7 @@ async function ensureTable() {
     await pool.query(`
     CREATE TABLE IF NOT EXISTS pincodes (
       id         SERIAL PRIMARY KEY,
-      postalcode VARCHAR(20) UNIQUE NOT NULL,
+      postal_code VARCHAR(20) UNIQUE NOT NULL,
       latitude   DOUBLE PRECISION NOT NULL,
       longitude  DOUBLE PRECISION NOT NULL,
       city       VARCHAR(100),
@@ -108,20 +108,20 @@ async function seedFromCSV(csvPath) {
     for (const line of lines) {
         if (!line.trim()) continue;
         const cols = line.split(",");
-        const postalcode = cols[0]?.trim();
+        const postal_code = cols[0]?.trim();
         const latitude = parseFloat(cols[1]);
         const longitude = parseFloat(cols[2]);
         const city = cols[3]?.trim() || null;
         const state = cols[4]?.trim() || null;
 
-        if (!postalcode || isNaN(latitude) || isNaN(longitude)) { skipped++; continue; }
+        if (!postal_code || isNaN(latitude) || isNaN(longitude)) { skipped++; continue; }
 
         try {
             await pool.query(
-                `INSERT INTO pincodes (postalcode, latitude, longitude, city, state)
+                `INSERT INTO pincodes (postal_code, latitude, longitude, city, state)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (postalcode) DO NOTHING`,
-                [postalcode, latitude, longitude, city, state]
+         ON CONFLICT (postal_code) DO NOTHING`,
+                [postal_code, latitude, longitude, city, state]
             );
             inserted++;
         } catch { skipped++; }
@@ -134,9 +134,9 @@ async function seedSampleData() {
     for (const row of SAMPLE_PINCODES) {
         try {
             await pool.query(
-                `INSERT INTO pincodes (postalcode, latitude, longitude, city, state)
+                `INSERT INTO pincodes (postal_code, latitude, longitude, city, state)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (postalcode) DO NOTHING`,
+         ON CONFLICT (postal_code) DO NOTHING`,
                 [row.postalcode, row.latitude, row.longitude, row.city, row.state]
             );
             inserted++;
@@ -182,7 +182,7 @@ async function main() {
       LIMIT 1
     `);
         if (test.rows.length > 0) {
-            console.log(`\n🧪 Spatial test: nearest to Mumbai CST → ${test.rows[0].postalcode} (${test.rows[0].city}) at ${parseFloat(test.rows[0].dist).toFixed(0)}m`);
+            console.log(`\n🧪 Spatial test: nearest to Mumbai CST → ${test.rows[0].postal_code} (${test.rows[0].city}) at ${parseFloat(test.rows[0].dist).toFixed(0)}m`);
             console.log(`\n🚀 PostGIS-first geocoding is READY!`);
         }
 
