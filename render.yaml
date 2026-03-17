@@ -4,8 +4,8 @@ services:
     env: node
     plan: free
     buildCommand: "npm install"
-    # For free tier, we combine migration and start in one command
-    startCommand: "node scripts/runMigration.js && npm start"
+    # For free tier, we combine migration, seeding, and start in one command
+    startCommand: "node scripts/runMigration.js && node utils/seedPincodes.js && npm start"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
