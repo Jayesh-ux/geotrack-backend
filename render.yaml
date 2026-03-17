@@ -4,8 +4,8 @@ services:
     env: node
     plan: free
     buildCommand: "npm install"
-    # Temporarily simplify for debugging
-    startCommand: "npm start"
+    # Run migrations and seeding before starting the server
+    startCommand: "node scripts/runMigration.js && node utils/seedPincodes.js && npm start"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
