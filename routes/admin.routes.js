@@ -20,10 +20,6 @@ router.get("/user-meetings/:userId", asyncHandler(adminController.getUserMeeting
 router.get("/user-expenses/:userId", asyncHandler(adminController.getUserExpenses));
 router.get("/check", asyncHandler(adminController.checkAdminStatus));
 
-// ✅ NEW: All meetings (for map visualization, supports ?status=IN_PROGRESS)
-router.get("/meetings", asyncHandler(adminController.getAllMeetings));
-router.get("/team-locations", asyncHandler(adminController.getTeamLocations));
-
 // NEW USER MANAGEMENT ROUTES
 router.post("/users", asyncHandler(adminController.createUser));
 router.get("/users/:userId", asyncHandler(adminController.getUserDetails));

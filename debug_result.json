@@ -1,0 +1,85 @@
+{
+  "companies": [
+    {
+      "id": "c79b2cf7-6c09-460e-bde5-b7ef75b2bfe6",
+      "name": "rishi's Company"
+    },
+    {
+      "id": "14e77166-1fba-4398-ab82-778711771387",
+      "name": "adi's Company"
+    },
+    {
+      "id": "85ad419c-2e9b-44fd-b0a2-b9f5e4111612",
+      "name": "Adminfordemo's Company"
+    },
+    {
+      "id": "d5a27548-2ff0-4137-9af1-df7986d70c47",
+      "name": "test2001's Company"
+    },
+    {
+      "id": "03cc3deb-8f33-43ea-96a7-ab939ac89e28",
+      "name": "Abcd Inc"
+    }
+  ],
+  "users": [
+    {
+      "id": "a83186e1-e658-4f6d-bdfd-84eb0128f85b",
+      "email": "agent@test.com",
+      "password": "$2a$10$39lFV5aiJiMfpncCEeMvdep/VwuJ/xAlKBay1qVLcsYeZO2AnnuMy",
+      "reset_token": null,
+      "reset_token_expiry": null,
+      "created_at": "2026-03-12T05:01:58.053Z",
+      "updated_at": "2026-03-12T05:01:58.053Z",
+      "latitude": null,
+      "longitude": null,
+      "pincode": "400001",
+      "is_admin": false,
+      "role": "user",
+      "company_id": "03cc3deb-8f33-43ea-96a7-ab939ac89e28",
+      "is_super_admin": false,
+      "auth_source": "local",
+      "is_trial_user": false,
+      "total_received_amount": "0"
+    },
+    {
+      "id": "c137511e-e1c2-4cfa-acdb-1cf81d58abf5",
+      "email": "admin@test.com",
+      "password": "$2a$10$tIWq6rqbORFa3ipacAed6uXNfr5DXw7jOnGGihXcdWIxhu6oRX1U6",
+      "reset_token": null,
+      "reset_token_expiry": null,
+      "created_at": "2026-03-12T04:53:36.786Z",
+      "updated_at": "2026-03-12T04:53:36.786Z",
+      "latitude": null,
+      "longitude": null,
+      "pincode": null,
+      "is_admin": true,
+      "role": "user",
+      "company_id": "03cc3deb-8f33-43ea-96a7-ab939ac89e28",
+      "is_super_admin": false,
+      "auth_source": "local",
+      "is_trial_user": false,
+      "total_received_amount": "0"
+    }
+  ],
+  "clients": [
+    {
+      "id": "2df1bafb-ba38-4574-a8c8-c0ef099204cc",
+      "name": "Tech Innovators",
+      "company_id": "03cc3deb-8f33-43ea-96a7-ab939ac89e28",
+      "pincode": "400051"
+    },
+    {
+      "id": "57068b5c-2344-4b1b-8850-e086a8043206",
+      "name": "Creative Agency",
+      "company_id": "03cc3deb-8f33-43ea-96a7-ab939ac89e28",
+      "pincode": "400018"
+    },
+    {
+      "id": "1edfdfeb-8430-4b7f-9891-07df728a7b8e",
+      "name": "Global Solutions",
+      "company_id": "03cc3deb-8f33-43ea-96a7-ab939ac89e28",
+      "pincode": "400001"
+    }
+  ],
+  "agent_pincodes": "table not found"
+}

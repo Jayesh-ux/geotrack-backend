@@ -37,7 +37,7 @@ export const getAllClients = async (req, res) => {
   params.push(parseInt(limit), parseInt(offset));
 
   const result = await pool.query(query, params);
-
+  
   // ✅ UPDATED: Add company_id filter to count query
   let countQuery = "SELECT COUNT(*) FROM clients WHERE 1=1";
   const countParams = [];
@@ -68,18 +68,18 @@ export const getAllClients = async (req, res) => {
 
   res.json({
     clients: result.rows,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      totalPages: Math.ceil(total / limit)
+    pagination: { 
+      page: parseInt(page), 
+      limit: parseInt(limit), 
+      total, 
+      totalPages: Math.ceil(total / limit) 
     }
   });
 };
 
 export const getAllUsers = async (req, res) => {
   const { limit = 1000 } = req.query;
-
+  
   // ✅ UPDATED: Add company_id filter (unless super admin)
   let query = `
     SELECT u.id, u.email, u.created_at, u.pincode, u.is_admin, u.is_super_admin,
@@ -88,15 +88,15 @@ export const getAllUsers = async (req, res) => {
     LEFT JOIN profiles p ON u.id = p.user_id
   `;
   const params = [];
-
+  
   if (!req.isSuperAdmin) {
     query += ` WHERE u.company_id = $1`;
     params.push(req.companyId);
   }
-
+  
   query += ` ORDER BY u.created_at DESC LIMIT $${params.length + 1}`;
   params.push(limit);
-
+  
   const result = await pool.query(query, params);
 
   console.log(`✅ Admin fetched ${result.rows.length} users`);
@@ -191,12 +191,6 @@ export const getAnalytics = async (req, res) => {
        ${companyFilter}) AS meetings_last_month,
 
       (SELECT COUNT(*) 
-       FROM meetings 
-       WHERE created_at >= NOW() - INTERVAL '30 days'
-       AND proximity_verified = true
-       ${companyFilter}) AS verified_meetings_last_month,
-
-      (SELECT COUNT(*) 
        FROM trip_expenses 
        WHERE created_at >= NOW() - INTERVAL '30 days'
        ${companyFilter}) AS expenses_last_month,
@@ -233,7 +227,6 @@ export const getAnalytics = async (req, res) => {
       coordinatesCoverage: parseFloat(coveragePercent),
       inactiveClients: parseInt(inactiveClients.rows[0].inactive_count),
       meetingsLastMonth: parseInt(recentActivity.rows[0].meetings_last_month || 0),
-      verifiedMeetingsLastMonth: parseInt(recentActivity.rows[0].verified_meetings_last_month || 0),
       expensesLastMonth: parseInt(recentActivity.rows[0].expenses_last_month || 0),
       newClientsLastMonth: parseInt(recentActivity.rows[0].new_clients_last_month || 0)
     },
@@ -256,7 +249,7 @@ export const getUserLocationLogs = async (req, res) => {
       "SELECT id FROM users WHERE id = $1 AND company_id = $2",
       [userId, req.companyId]
     );
-
+    
     if (userCheck.rows.length === 0) {
       console.log(`❌ User ${userId} not found in company ${req.companyId}`);
       return res.status(404).json({ error: "UserNotFound" });
@@ -265,7 +258,7 @@ export const getUserLocationLogs = async (req, res) => {
 
   // ✅ FIX: Build params array correctly based on admin type
   let query, params, countQuery, countParams;
-
+  
   if (req.isSuperAdmin) {
     // Super admin: No company filter
     query = `SELECT id, latitude, longitude, accuracy, activity, battery, notes, pincode, timestamp
@@ -274,10 +267,10 @@ export const getUserLocationLogs = async (req, res) => {
              ORDER BY timestamp DESC
              LIMIT $2 OFFSET $3`;
     params = [userId, parseInt(limit), parseInt(offset)];
-
+    
     countQuery = `SELECT COUNT(*) FROM location_logs WHERE user_id = $1`;
     countParams = [userId];
-
+    
   } else {
     // Regular admin: Include company filter
     query = `SELECT id, latitude, longitude, accuracy, activity, battery, notes, pincode, timestamp
@@ -286,7 +279,7 @@ export const getUserLocationLogs = async (req, res) => {
              ORDER BY timestamp DESC
              LIMIT $3 OFFSET $4`;
     params = [userId, req.companyId, parseInt(limit), parseInt(offset)];
-
+    
     countQuery = `SELECT COUNT(*) FROM location_logs WHERE user_id = $1 AND company_id = $2`;
     countParams = [userId, req.companyId];
   }
@@ -317,7 +310,7 @@ export const getClockStatus = async (req, res) => {
       "SELECT id FROM users WHERE id = $1 AND company_id = $2",
       [userId, req.companyId]
     );
-
+    
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ error: "UserNotFound" });
     }
@@ -331,7 +324,7 @@ export const getClockStatus = async (req, res) => {
   }
 
   const result = await pool.query(`
-    SELECT timestamp, latitude, longitude
+    SELECT timestamp
     FROM location_logs
     WHERE user_id = $1
     ${companyFilter}
@@ -340,20 +333,18 @@ export const getClockStatus = async (req, res) => {
   `, params);
 
   if (result.rows.length === 0) {
-    return res.json({ clocked_in: false, last_seen: null, latitude: null, longitude: null });
+    return res.json({ clocked_in: false, last_seen: null });
   }
 
   const lastSeen = new Date(result.rows[0].timestamp);
   const now = new Date();
   const diffMinutes = (now - lastSeen) / (1000 * 60);
-
+  
   const isActive = diffMinutes <= 5;
 
   res.json({
     clocked_in: isActive,
-    last_seen: lastSeen.toISOString(),
-    latitude: result.rows[0].latitude ? parseFloat(result.rows[0].latitude) : null,
-    longitude: result.rows[0].longitude ? parseFloat(result.rows[0].longitude) : null
+    last_seen: lastSeen.toISOString()
   });
 };
 
@@ -389,7 +380,7 @@ export const getUserMeetings = async (req, res) => {
       "SELECT id FROM users WHERE id = $1 AND company_id = $2",
       [userId, req.companyId]
     );
-
+    
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ error: "UserNotFound" });
     }
@@ -403,13 +394,13 @@ export const getUserMeetings = async (req, res) => {
   }
 
   // FIXED total count query
-  const totalCountResult = await pool.query(
-    `SELECT COUNT(*)
+const totalCountResult = await pool.query(
+  `SELECT COUNT(*)
    FROM meetings m
    WHERE m.user_id = $1
    ${req.isSuperAdmin ? '' : 'AND m.company_id = $2'}`,
-    req.isSuperAdmin ? [userId] : [userId, req.companyId]
-  );
+  req.isSuperAdmin ? [userId] : [userId, req.companyId]
+);
 
   const totalCount = parseInt(totalCountResult.rows[0].count);
 
@@ -429,9 +420,6 @@ export const getUserMeetings = async (req, res) => {
        m.status,
        m.comments,
        m.attachments,
-       m.proximity_verified,
-       m.proximity_distance,
-       m.proximity_reason,
        m.created_at AS "createdAt",
        m.updated_at AS "updatedAt",
        c.name AS "clientName",
@@ -447,20 +435,8 @@ export const getUserMeetings = async (req, res) => {
 
   console.log(`Fetched ${result.rows.length} meetings for user ${userId}`);
 
-  const mappedMeetings = result.rows.map(row => {
-    const { proximity_verified, proximity_distance, proximity_reason, ...rest } = row;
-    return {
-      ...rest,
-      proximity: proximity_verified !== null ? {
-        verified: proximity_verified,
-        distanceMetres: proximity_distance,
-        reason: proximity_reason
-      } : null
-    };
-  });
-
   res.json({
-    meetings: mappedMeetings,
+    meetings: result.rows,
     pagination: {
       page,
       limit,
@@ -484,7 +460,7 @@ export const getUserExpenses = async (req, res) => {
       "SELECT id FROM users WHERE id = $1 AND company_id = $2",
       [userId, req.companyId]
     );
-
+    
     if (userCheck.rows.length === 0) {
       return res.status(404).json({ error: "UserNotFound" });
     }
@@ -566,7 +542,7 @@ export const getUserExpenses = async (req, res) => {
 };
 
 export const checkAdminStatus = (req, res) => {
-  res.json({
+  res.json({ 
     isAdmin: req.user.isAdmin || false,
     isSuperAdmin: req.user.isSuperAdmin || false,
     userId: req.user.id,
@@ -608,7 +584,7 @@ export const getUserDetails = async (req, res) => {
 // Create user (admin version)
 export const createUser = async (req, res) => {
   const { email, password, fullName, department, workHoursStart, workHoursEnd, isAdmin = false } = req.body;
-
+  
   if (!email || !password) {
     return res.status(400).json({ error: "MissingFields" });
   }
@@ -623,23 +599,23 @@ export const createUser = async (req, res) => {
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
-
+  
   // ✅ UPDATED: Assign new user to admin's company (super admin can override)
   const targetCompanyId = req.body.companyId || req.companyId;
-
+  
   // ✅ UPDATED: Only super admin can assign to different company
   if (targetCompanyId !== req.companyId && !req.isSuperAdmin) {
-    return res.status(403).json({
+    return res.status(403).json({ 
       error: "Forbidden",
-      message: "Only super admins can assign users to different companies"
+      message: "Only super admins can assign users to different companies" 
     });
   }
 
   // ✅ UPDATED: Only super admin can create admins
   if (isAdmin && !req.isSuperAdmin) {
-    return res.status(403).json({
+    return res.status(403).json({ 
       error: "Forbidden",
-      message: "Only super admins can create admin users"
+      message: "Only super admins can create admin users" 
     });
   }
 
@@ -652,7 +628,7 @@ export const createUser = async (req, res) => {
   );
 
   const user = userResult.rows[0];
-
+  
   await pool.query(
     `INSERT INTO profiles (user_id, full_name, department, work_hours_start, work_hours_end)
      VALUES ($1, $2, $3, $4, $5)`,
@@ -660,8 +636,8 @@ export const createUser = async (req, res) => {
   );
 
   console.log(`✅ Admin created user: ${email} (Admin: ${isAdmin})`);
-  res.status(201).json({
-    message: "UserCreated",
+  res.status(201).json({ 
+    message: "UserCreated", 
     user: {
       ...user,
       full_name: fullName,
@@ -693,9 +669,9 @@ export const updateUser = async (req, res) => {
 
   // ✅ UPDATED: Only super admin can change admin status
   if (isAdmin !== undefined && !req.isSuperAdmin) {
-    return res.status(403).json({
+    return res.status(403).json({ 
       error: "Forbidden",
-      message: "Only super admins can change admin status"
+      message: "Only super admins can change admin status" 
     });
   }
 
@@ -746,8 +722,8 @@ export const updateUser = async (req, res) => {
   );
 
   console.log(`✅ Admin updated user: ${userId}`);
-  res.json({
-    message: "UserUpdated",
+  res.json({ 
+    message: "UserUpdated", 
     user: {
       id: userId,
       email: email,
@@ -827,94 +803,4 @@ export const resetUserPassword = async (req, res) => {
 
   console.log(`🔑 Admin reset password for user: ${userCheck.rows[0].email}`);
   res.json({ message: "PasswordReset", email: userCheck.rows[0].email });
-};
-
-// ============================================================
-// GET ALL MEETINGS (for admin map view)
-// Supports ?status=IN_PROGRESS and ?limit=N
-// ============================================================
-export const getAllMeetings = async (req, res) => {
-  const { status, limit = 1000, page = 1 } = req.query;
-  const offset = (page - 1) * limit;
-
-  let query = `
-    SELECT 
-      m.id,
-      m.user_id    AS "userId",
-      m.client_id  AS "clientId",
-      m.start_time AS "startTime",
-      m.end_time   AS "endTime",
-      m.status,
-      m.start_latitude  AS "startLatitude",
-      m.start_longitude AS "startLongitude",
-      m.proximity_verified,
-      m.proximity_distance,
-      m.proximity_reason,
-      u.full_name AS "agentName",
-      u.email     AS "agentEmail",
-      c.name      AS "clientName",
-      c.latitude  AS "clientLatitude",
-      c.longitude AS "clientLongitude"
-    FROM meetings m
-    LEFT JOIN users   u ON u.id = m.user_id
-    LEFT JOIN clients c ON c.id = m.client_id
-    WHERE 1=1
-  `;
-  const params = [];
-  let p = 0;
-
-  if (!req.isSuperAdmin) {
-    p++;
-    query += ` AND m.company_id = $${p}`;
-    params.push(req.companyId);
-  }
-
-  if (status) {
-    p++;
-    query += ` AND m.status = $${p}`;
-    params.push(status);
-  }
-
-  query += ` ORDER BY m.start_time DESC LIMIT $${p + 1} OFFSET $${p + 2}`;
-  params.push(parseInt(limit), parseInt(offset));
-
-  const result = await pool.query(query, params);
-
-  const meetings = result.rows.map(row => {
-    const { proximity_verified, proximity_distance, proximity_reason, ...rest } = row;
-    return {
-      ...rest,
-      // Flat fields for map view (frontend reads these directly)
-      proximity_verified,
-      proximity_distance,
-      proximity_reason,
-      // Nested object for consistency
-      proximity: {
-        verified: proximity_verified,
-        distanceMetres: proximity_distance,
-        reason: proximity_reason,
-      }
-    };
-  });
-
-  res.json({ meetings, count: meetings.length });
-};
-export const getTeamLocations = async (req, res) => {
-  try {
-    let query = `SELECT DISTINCT ON (u.id) u.id, u.email, p.full_name AS "fullName", l.latitude, l.longitude, l.accuracy, l.timestamp, l.activity, l.battery FROM users u LEFT JOIN profiles p ON p.user_id = u.id LEFT JOIN location_logs l ON l.user_id = u.id WHERE u.is_admin = false`;
-    const params = [];
-
-    if (!req.isSuperAdmin) {
-      query += ` AND u.company_id = $1`;
-      params.push(req.companyId);
-    }
-
-    query += ` ORDER BY u.id, l.timestamp DESC`;
-
-    const result = await pool.query(query, params);
-    res.json({ agents: result.rows.map(row => ({ ...row, latitude: row.latitude ? parseFloat(row.latitude) : null, longitude: row.longitude ? parseFloat(row.longitude) : null, accuracy: row.accuracy ? parseFloat(row.accuracy) : null })) });
- } catch (error) {
-    console.error("❌ Error fetching team locations:", error);
-    res.status(500).json({ error: "InternalServerError" });
- }
 };

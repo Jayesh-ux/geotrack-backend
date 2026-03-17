@@ -1,29 +1,27 @@
 // controllers/sync.controller.js
 // UPDATED: All queries now filter by company_id
 // Tally sync now requires company identification
-// UPDATED v2: PostGIS-first pincode resolution for incoming Tally clients
 
 import { pool } from "../db.js";
-import { getPincodeFromCoordinates } from "../services/geocoding.service.js";
 
 export const syncTallyClients = async (req, res) => {
   const client = await pool.connect();
-
+  
   try {
     const { clients: tallyClients, companyId } = req.body;
 
     if (!tallyClients || !Array.isArray(tallyClients)) {
-      return res.status(400).json({
-        error: "InvalidPayload",
-        message: "Expected array of clients"
+      return res.status(400).json({ 
+        error: "InvalidPayload", 
+        message: "Expected array of clients" 
       });
     }
 
     // ✅ NEW: Company ID is required for Tally sync
     if (!companyId) {
-      return res.status(400).json({
-        error: "CompanyIdRequired",
-        message: "Company ID must be specified for Tally sync"
+      return res.status(400).json({ 
+        error: "CompanyIdRequired", 
+        message: "Company ID must be specified for Tally sync" 
       });
     }
 
@@ -34,9 +32,9 @@ export const syncTallyClients = async (req, res) => {
     );
 
     if (companyCheck.rows.length === 0) {
-      return res.status(404).json({
-        error: "CompanyNotFound",
-        message: "Specified company does not exist"
+      return res.status(404).json({ 
+        error: "CompanyNotFound", 
+        message: "Specified company does not exist" 
       });
     }
 
@@ -81,17 +79,8 @@ export const syncTallyClients = async (req, res) => {
         const finalLat = latitude || null;
         const finalLng = longitude || null;
 
-        // Resolve pincode via PostGIS if coords are present but pincode is missing
-        let resolvedPincode = pincode || null;
-        if (finalLat && finalLng && !resolvedPincode) {
-          resolvedPincode = await getPincodeFromCoordinates(finalLat, finalLng);
-          if (resolvedPincode) {
-            console.log(`📍 Tally sync: resolved pincode ${resolvedPincode} for ${name} via PostGIS | $0`);
-          }
-        }
-
         let existingClient = null;
-
+        
         // ✅ UPDATED: Check by GUID within company
         if (tally_guid) {
           const guidResult = await client.query(
@@ -102,7 +91,7 @@ export const syncTallyClients = async (req, res) => {
             existingClient = guidResult.rows[0];
           }
         }
-
+        
         // ✅ UPDATED: Check by email within company
         if (!existingClient && email) {
           const emailResult = await client.query(
@@ -155,14 +144,14 @@ export const syncTallyClients = async (req, res) => {
              WHERE id = $12
              RETURNING id, latitude, longitude`,
             [
-              name, email, phone, address, finalLat, finalLng,
-              status, notes, resolvedPincode, tally_guid, source, existingClient.id
+              name, email, phone, address, finalLat, finalLng, 
+              status, notes, pincode, tally_guid, source, existingClient.id
             ]
           );
-
+          
           clientId = updateResult.rows[0].id;
           const hasCoordinates = updateResult.rows[0].latitude && updateResult.rows[0].longitude;
-
+          
           updatedCount++;
           console.log(`✏️  Updated: ${name} (${clientId}) - Coords: ${hasCoordinates ? '✔' : '✗'}`);
 
@@ -174,10 +163,10 @@ export const syncTallyClients = async (req, res) => {
               pincode, tally_guid, source, created_by, company_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULL, $12)
              RETURNING id`,
-            [name, email, phone, address, finalLat, finalLng, status, notes,
-              resolvedPincode, tally_guid, source, companyId]
+            [name, email, phone, address, finalLat, finalLng, status, notes, 
+             pincode, tally_guid, source, companyId]
           );
-
+          
           clientId = insertResult.rows[0].id;
           newCount++;
           console.log(`✨ Created: ${name} (${clientId}) - Coords: ${finalLat ? '✔' : '✗'}`);
@@ -197,10 +186,10 @@ export const syncTallyClients = async (req, res) => {
       } catch (error) {
         console.error(`❌ Failed to sync ${tallyClient.name}:`, error.message);
         failedCount++;
-        errors.push({
-          tally_guid: tallyClient.tally_guid,
+        errors.push({ 
+          tally_guid: tallyClient.tally_guid, 
           name: tallyClient.name,
-          error: error.message
+          error: error.message 
         });
       }
     }
@@ -231,7 +220,7 @@ export const syncTallyClients = async (req, res) => {
       [companyId]
     );
     const missingCoords = parseInt(missingCoordsResult.rows[0].count);
-
+    
     console.log(`\n📍 Geocoding Status for ${companyName}:`);
     console.log(`   Clients without coordinates: ${missingCoords}`);
     console.log(`   ℹ️  Note: Server-side geocoding is disabled. Please geocode in middleware.`);
@@ -257,7 +246,7 @@ export const syncTallyClients = async (req, res) => {
     await client.query("ROLLBACK");
     console.error("❌ TALLY SYNC ERROR:", err);
     console.error("Stack:", err.stack);
-
+    
     try {
       await pool.query(
         `INSERT INTO tally_sync_log 
@@ -269,9 +258,9 @@ export const syncTallyClients = async (req, res) => {
     } catch (logError) {
       console.error("Failed to log sync error:", logError);
     }
-
-    res.status(500).json({
-      error: "SyncFailed",
+    
+    res.status(500).json({ 
+      error: "SyncFailed", 
       message: err.message,
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
@@ -284,7 +273,7 @@ export const syncTallyClients = async (req, res) => {
 export const getSyncStatus = async (req, res) => {
   // ✅ UPDATED: Filter by company_id (unless super admin accessing via header)
   const companyId = req.headers['x-company-id'] || req.user.companyId;
-
+  
   const result = await pool.query(
     `SELECT * FROM tally_sync_log 
      WHERE company_id = $1
@@ -312,7 +301,7 @@ export const getSyncStatus = async (req, res) => {
 export const getLatestSync = async (req, res) => {
   // ✅ UPDATED: Filter by company_id
   const companyId = req.headers['x-company-id'] || req.user.companyId;
-
+  
   const result = await pool.query(
     `SELECT * FROM tally_sync_log 
      WHERE status = 'completed' AND company_id = $1
@@ -322,9 +311,9 @@ export const getLatestSync = async (req, res) => {
   );
 
   if (result.rows.length === 0) {
-    return res.json({
+    return res.json({ 
       message: "NoSyncsYet",
-      lastSync: null
+      lastSync: null 
     });
   }
 
@@ -344,7 +333,7 @@ export const getLatestSync = async (req, res) => {
 export const triggerSync = async (req, res) => {
   // ✅ UPDATED: Include company_id in trigger
   const companyId = req.headers['x-company-id'] || req.user.companyId;
-
+  
   await pool.query(
     `INSERT INTO tally_sync_log 
      (sync_started_at, total_records, status, triggered_by, company_id)
@@ -353,7 +342,7 @@ export const triggerSync = async (req, res) => {
     [companyId]
   );
 
-  res.json({
+  res.json({ 
     message: "SyncTriggered",
     note: "Middleware should start syncing now",
     companyId: companyId
@@ -363,14 +352,14 @@ export const triggerSync = async (req, res) => {
 export const getClientGuids = async (req, res) => {
   // ✅ UPDATED: Filter by company_id
   const companyId = req.headers['x-company-id'] || req.user.companyId;
-
+  
   const result = await pool.query(
     `SELECT tally_guid FROM clients 
      WHERE tally_guid IS NOT NULL 
      AND company_id = $1`,
     [companyId]
   );
-
+  
   res.json({
     guids: result.rows.map(r => r.tally_guid),
     companyId: companyId

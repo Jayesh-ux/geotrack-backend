@@ -33,7 +33,7 @@ const CLIENT_SELECT_FIELDS = `
 
 export const uploadExcel = async (req, res) => {
   const client = await pool.connect();
-
+  
   try {
     if (!req.file) {
       return res.status(400).json({ error: "NoFileUploaded" });
@@ -64,14 +64,14 @@ export const uploadExcel = async (req, res) => {
     for (const row of rows) {
       const name = row.name || row.Name || null;
       const email = row.email || row.Email || null;
-
+      
       let phone = row.phone || row.Phone || null;
       if (phone !== null && phone !== undefined && phone !== '') {
         phone = String(phone).trim().replace(/\s+/g, '');
       } else {
         phone = null;
       }
-
+      
       const address = row.address || row.Address || null;
       const note = row.note || row.Note || row.notes || row.Notes || null;
       const status = row.status || row.Status || 'active';
@@ -134,7 +134,7 @@ export const uploadExcel = async (req, res) => {
 
       // ✅ UPDATED: Check for duplicates WITHIN THE SAME COMPANY
       let duplicateCheck = { rows: [] };
-
+      
       if (email) {
         duplicateCheck = await client.query(
           `SELECT id FROM clients 
@@ -145,10 +145,10 @@ export const uploadExcel = async (req, res) => {
           [email, req.user.id, req.companyId] // ← Added company_id
         );
       }
-
+      
       if (duplicateCheck.rows.length === 0 && phone) {
         const cleanPhone = phone.replace(/\D/g, '');
-
+        
         if (cleanPhone.length >= 10) {
           duplicateCheck = await client.query(
             `SELECT id FROM clients 
@@ -160,10 +160,10 @@ export const uploadExcel = async (req, res) => {
           );
         }
       }
-
+      
       if (duplicateCheck.rows.length === 0) {
         const cleanName = name.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
-
+        
         if (pincode) {
           duplicateCheck = await client.query(
             `SELECT id FROM clients 
@@ -189,7 +189,7 @@ export const uploadExcel = async (req, res) => {
       // Update or insert
       if (duplicateCheck.rows.length > 0) {
         const existingId = duplicateCheck.rows[0].id;
-
+        
         await client.query(
           `UPDATE clients 
            SET 
@@ -208,7 +208,7 @@ export const uploadExcel = async (req, res) => {
 
         updated++;
         console.log(`🔄 Updated: ${name} (ID: ${existingId})`);
-
+        
       } else {
         // ✅ UPDATED: Include company_id in INSERT
         await client.query(
@@ -245,10 +245,10 @@ export const uploadExcel = async (req, res) => {
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("❌ Upload error:", error);
-
-    res.status(500).json({
-      error: "UploadFailed",
-      message: error.message
+    
+    res.status(500).json({ 
+      error: "UploadFailed", 
+      message: error.message 
     });
   } finally {
     client.release();
@@ -262,28 +262,17 @@ export const createClient = async (req, res) => {
     return res.status(400).json({ error: "ClientNameRequired" });
   }
 
-  // Insert first to get the clientId, then resolve pincode via PostGIS local-first
-  const insertResult = await pool.query(
-    `INSERT INTO clients (name, email, phone, address, latitude, longitude, status, notes, pincode, created_by, company_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, $10)
-     RETURNING id`,
-    [name, email || null, phone || null, address || null, latitude || null, longitude || null, status || "active", notes || null, req.user.id, req.companyId]
-  );
-
-  const newClientId = insertResult.rows[0].id;
-
-  // Resolve pincode via Phase 1 (PostGIS) → Phase 4 (Google), passing clientId for cache tagging
   let pincode = null;
   if (latitude && longitude) {
-    pincode = await getPincodeFromCoordinates(latitude, longitude, newClientId);
-    if (pincode) {
-      await pool.query(`UPDATE clients SET pincode = $1 WHERE id = $2`, [pincode, newClientId]);
-    }
+    pincode = await getPincodeFromCoordinates(latitude, longitude);
   }
 
+  // ✅ UPDATED: Include company_id in INSERT
   const result = await pool.query(
-    `SELECT ${CLIENT_SELECT_FIELDS} FROM clients WHERE id = $1`,
-    [newClientId]
+    `INSERT INTO clients (name, email, phone, address, latitude, longitude, status, notes, pincode, created_by, company_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     RETURNING ${CLIENT_SELECT_FIELDS}`,
+    [name, email || null, phone || null, address || null, latitude || null, longitude || null, status || "active", notes || null, pincode, req.user.id, req.companyId] // ← Added company_id
   );
 
   console.log(`✅ Client created: ${name} (Pincode: ${pincode || 'N/A'})`);
@@ -295,39 +284,34 @@ export const createClient = async (req, res) => {
 };
 
 export const getClients = async (req, res) => {
-  let {
-    status,
-    search,
-    page = 1,
-    limit = 100,
-    searchMode
+  const { 
+    status, 
+    search, 
+    page = 1, 
+    limit = 100, 
+    searchMode = 'local'
   } = req.query;
-
-  // ✅ NEW: Default to remote mode for admins, local for agents
-  if (!searchMode) {
-    searchMode = req.user.isAdmin ? 'remote' : 'local';
-  }
-
+  
   const offset = (page - 1) * limit;
 
-  console.log(`👤 [getClients] User: ${req.user.id} (${req.user.email}) | Admin: ${req.user.isAdmin} | Company: ${req.companyId} | Mode: ${searchMode}`);
+  console.log(`👤 Fetching clients for user: ${req.user.id} | Company: ${req.companyId} | Mode: ${searchMode}`);
 
   // ✅ UPDATED: Add company filter to all queries
   if (searchMode === 'remote') {
     console.log(`🌐 Remote search mode`);
 
-    let query = `SELECT ${CLIENT_SELECT_FIELDS} FROM clients WHERE 1=1`;
-    const params = [];
-
-    if (!req.isSuperAdmin) {
-      query += ` AND company_id = $1`;
-      params.push(req.companyId);
-    }
-    let paramCount = params.length;
+    let query = `
+      SELECT ${CLIENT_SELECT_FIELDS}
+  FROM clients
+  WHERE company_id = $1
+  AND (created_by IS NULL OR created_by = $2)
+    `;
+    const params = [req.companyId, req.user.id]; // ← Added company_id filter
+    let paramCount = 2;
 
     if (search && search.trim()) {
       paramCount++;
-
+      
       if (/^\d+$/.test(search.trim())) {
         console.log(`🔢 Detected pincode search: ${search}`);
         query += ` AND pincode = $${paramCount}`;
@@ -360,17 +344,11 @@ export const getClients = async (req, res) => {
     params.push(parseInt(limit), parseInt(offset));
 
     const result = await pool.query(query, params);
-    console.log(`🌐 [Remote Search] Query: ${query.substring(0, 100)}... | Params: ${JSON.stringify(params)} | Found: ${result.rows.length}`);
 
     // Count query
-    let countQuery = `SELECT COUNT(*) FROM clients WHERE 1=1`;
-    const countParams = [];
-
-    if (!req.isSuperAdmin) {
-      countQuery += ` AND company_id = $1`;
-      countParams.push(req.companyId);
-    }
-    let countParamIndex = countParams.length;
+    let countQuery = "SELECT COUNT(*) FROM clients WHERE company_id = $1 AND (created_by IS NULL OR created_by = $2)";
+    const countParams = [req.companyId, req.user.id]; // ← Added company_id filter
+    let countParamIndex = 2;
 
     if (search && search.trim()) {
       countParamIndex++;
@@ -416,39 +394,26 @@ export const getClients = async (req, res) => {
 
   // LOCAL MODE - Filter by user's pincode
   const userPincode = (await pool.query("SELECT pincode FROM users WHERE id = $1", [req.user.id])).rows[0]?.pincode;
-
+  
   if (!userPincode) {
-    // UPDATED: Return empty list instead of 400 error for better UX on first login
-    return res.json({
-      clients: [],
-      userPincode: null,
-      filteredByPincode: true,
-      searchMode: 'local',
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: 0,
-        totalPages: 0,
-      },
-      message: "Waiting for initial location log to determine local territory."
+    return res.status(400).json({ 
+      error: "NoPincodeFound",
+      message: "Please enable location tracking first. No location data available."
     });
   }
 
-  console.log(`📍 [Local Search] User Pincode: ${userPincode} | Company: ${req.companyId}`);
+  console.log(`📍 Local search mode - filtering by pincode: ${userPincode}`);
 
-  // ✅ UPDATED: Remove created_by restriction so agents can see clients uploaded by admins
+  // ✅ UPDATED: Add company filter
   let query = `
     SELECT ${CLIENT_SELECT_FIELDS}
     FROM clients
     WHERE pincode = $1
+    AND company_id = $2
+    AND (created_by IS NULL OR created_by = $3)
   `;
-  const params = [userPincode];
-  
-  if (!req.isSuperAdmin) {
-    query += ` AND company_id = $2`;
-    params.push(req.companyId);
-  }
-  let paramCount = params.length;
+  const params = [userPincode, req.companyId, req.user.id]; // ← Added company_id filter
+  let paramCount = 3;
 
   if (status) {
     paramCount++;
@@ -467,9 +432,9 @@ export const getClients = async (req, res) => {
 
   const result = await pool.query(query, params);
 
-  let countQuery = `SELECT COUNT(*) FROM clients WHERE pincode = $1 AND company_id = $2`;
-  const countParams = [userPincode, req.companyId];
-  let countParamIndex = countParams.length;
+  let countQuery = "SELECT COUNT(*) FROM clients WHERE pincode = $1 AND company_id = $2 AND (created_by IS NULL OR created_by = $3)";
+  const countParams = [userPincode, req.companyId, req.user.id]; // ← Added company_id filter
+  let countParamIndex = 3;
 
   if (status) {
     countParamIndex++;
@@ -505,11 +470,11 @@ export const getClients = async (req, res) => {
 export const getClientById = async (req, res) => {
   // ✅ UPDATED: Add company filter
   const result = await pool.query(
-    `SELECT ${CLIENT_SELECT_FIELDS}
+  `SELECT ${CLIENT_SELECT_FIELDS}
    FROM clients
    WHERE id = $1 AND company_id = $2`,
-    [req.params.id, req.companyId]
-  );
+  [req.params.id, req.companyId]
+);
 
 
   if (result.rows.length === 0) {
@@ -521,12 +486,10 @@ export const getClientById = async (req, res) => {
 
 export const updateClient = async (req, res) => {
   const { name, email, phone, address, latitude, longitude, status, notes } = req.body;
-  const clientId = req.params.id;
 
-  // Resolve pincode via PostGIS Phase 1 (local-first), passing clientId for Phase 2 cache
   let pincode = null;
   if (latitude && longitude) {
-    pincode = await getPincodeFromCoordinates(latitude, longitude, clientId);
+    pincode = await getPincodeFromCoordinates(latitude, longitude);
   }
 
   // ✅ UPDATED: Add company filter
@@ -535,7 +498,7 @@ export const updateClient = async (req, res) => {
      SET name = $1, email = $2, phone = $3, address = $4, latitude = $5, longitude = $6, status = $7, notes = $8, pincode = $9
      WHERE id = $10 AND company_id = $11
      RETURNING ${CLIENT_SELECT_FIELDS}`,
-    [name, email, phone, address, latitude, longitude, status, notes, pincode, clientId, req.companyId]
+    [name, email, phone, address, latitude, longitude, status, notes, pincode, req.params.id, req.companyId] // ← Added company_id filter
   );
 
   if (result.rows.length === 0) {

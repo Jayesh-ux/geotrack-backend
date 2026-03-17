@@ -6,12 +6,10 @@ import multer from "multer";
 import { authenticateToken } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { checkMeetingAttachmentUpload } from "../middleware/featureAuth.js";
-import {
-  blockTrialUserWrites,
-  enforceTrialUserLimits
+import { 
+  blockTrialUserWrites, 
+  enforceTrialUserLimits 
 } from "../middleware/trialUser.js";  // ← NEW IMPORT
-import { attachCompanyContext } from "../middleware/company.js";
-import { attachPlanFeatures } from "../middleware/featureAuth.js";
 import * as meetingsController from "../controllers/meetings.controller.js";
 
 const router = express.Router();
@@ -21,10 +19,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 // START MEETING
 // ============================================
 // Blocked for trial users
-router.post("/",
+router.post("/", 
   authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
   blockTrialUserWrites,  // ← NEW: Block trial users
   asyncHandler(meetingsController.startMeeting)
 );
@@ -33,10 +29,8 @@ router.post("/",
 // GET ACTIVE MEETING
 // ============================================
 // Allow trial users with limits
-router.get("/active/:clientId",
+router.get("/active/:clientId", 
   authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
   enforceTrialUserLimits,  // ← NEW: Allow trial users
   asyncHandler(meetingsController.getActiveMeeting)
 );
@@ -45,10 +39,8 @@ router.get("/active/:clientId",
 // GET MEETING BY ID
 // ============================================
 // Allow trial users with limits
-router.get("/:id",
+router.get("/:id", 
   authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
   enforceTrialUserLimits,  // ← NEW: Allow trial users
   asyncHandler(meetingsController.getMeetingById)
 );
@@ -57,10 +49,8 @@ router.get("/:id",
 // GET ALL MEETINGS
 // ============================================
 // Allow trial users with limits
-router.get("/",
+router.get("/", 
   authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
   enforceTrialUserLimits,  // ← NEW: Allow trial users
   asyncHandler(meetingsController.getMeetings)
 );
@@ -69,10 +59,8 @@ router.get("/",
 // UPDATE MEETING
 // ============================================
 // Blocked for trial users
-router.put("/:id",
+router.put("/:id", 
   authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
   blockTrialUserWrites,  // ← NEW: Block trial users
   asyncHandler(meetingsController.updateMeeting)
 );
@@ -81,10 +69,8 @@ router.put("/:id",
 // DELETE MEETING
 // ============================================
 // Blocked for trial users
-router.delete("/:id",
+router.delete("/:id", 
   authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
   blockTrialUserWrites,  // ← NEW: Block trial users
   asyncHandler(meetingsController.deleteMeeting)
 );
@@ -93,7 +79,7 @@ router.delete("/:id",
 // UPLOAD MEETING ATTACHMENT
 // ============================================
 // Blocked for trial users
-router.post("/:id/attachments",
+router.post("/:id/attachments", 
   authenticateToken,
   blockTrialUserWrites,  // ← NEW: Block trial users
   upload.single("file"),

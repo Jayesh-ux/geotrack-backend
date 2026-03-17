@@ -108,7 +108,7 @@ export const logout = async (req, res) => {
 };
 
 export const signup = async (req, res) => {
-  const { email, password, deviceId, fullName, isAdmin } = req.body;
+  const { email, password, deviceId, fullName } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: "MissingFields" });
@@ -169,11 +169,11 @@ export const signup = async (req, res) => {
   const userResult = await pool.query(
     `INSERT INTO users (email, password, is_admin, is_trial_user, company_id)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, email, is_trial_user, company_id, is_admin`,
+     RETURNING id, email, is_trial_user, company_id`,
     [
       email, 
       hashedPassword, 
-      isAdmin || false,               // Allow setting admin during signup for testing
+      false,                          // Not admin by default
       isTrialUser,                    // ← NEW: Mark as trial if generic email
       company?.id || null             // ← NEW: Auto-assign company if found
     ]
@@ -195,7 +195,7 @@ export const signup = async (req, res) => {
   const token = tokenService.generateToken({
     id: user.id,
     email: user.email,
-    isAdmin: user.is_admin,
+    isAdmin: false,
     isSuperAdmin: false,
     isTrialUser: user.is_trial_user,  // ← NEW
     companyId: user.company_id
@@ -213,8 +213,6 @@ export const signup = async (req, res) => {
       id: user.id,
       email: user.email,
       fullName: fullName || null,
-      isAdmin: user.is_admin,
-      isSuperAdmin: false,
       isTrialUser: user.is_trial_user,  // ← NEW
       companyId: user.company_id,
       companyName: company?.name || null,

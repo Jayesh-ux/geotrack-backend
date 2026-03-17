@@ -5,7 +5,7 @@ import { pool } from "../db.js";
 import { getPincodeFromCoordinates } from "../services/geocoding.service.js";
 
 export const createLocationLog = async (req, res) => {
-  const { latitude, longitude, accuracy, activity, notes, battery, clientId } = req.body;
+  const { latitude, longitude, accuracy, activity, notes, battery } = req.body;
 
   if (!latitude || !longitude) {
     return res.status(400).json({ error: "LocationRequired" });
@@ -13,9 +13,7 @@ export const createLocationLog = async (req, res) => {
 
   console.log(`📍 Logging location for user ${req.user.id}: ${latitude}, ${longitude}`);
 
-  // Phase 1 → PostGIS local DB, Phase 2 → client cache, Phase 4 → Google (only if needed)
-  const pincode = await getPincodeFromCoordinates(latitude, longitude, clientId || null);
-
+  const pincode = await getPincodeFromCoordinates(latitude, longitude);
 
   // ✅ UPDATED: Include company_id in INSERT
   const result = await pool.query(
@@ -59,16 +57,10 @@ export const getLocationLogs = async (req, res) => {
   const { startDate, endDate, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
 
-  // ✅ Filter by user_id. Add company_id only if not super admin or if context is set.
-  let query = "SELECT * FROM location_logs WHERE user_id = $1";
-  const params = [req.user.id];
-  let paramCount = 1;
-
-  if (!req.isSuperAdmin && req.companyId) {
-    paramCount++;
-    query += ` AND company_id = $${paramCount}`;
-    params.push(req.companyId);
-  }
+  // ✅ UPDATED: Add company_id filter
+  let query = "SELECT * FROM location_logs WHERE user_id = $1 AND company_id = $2";
+  const params = [req.user.id, req.companyId];
+  let paramCount = 2;
 
   if (startDate) {
     paramCount++;
@@ -114,11 +106,11 @@ export const getClockIn = async (req, res) => {
     `SELECT latitude, longitude, timestamp
      FROM location_logs
      WHERE user_id = $1
-       ${!req.isSuperAdmin ? 'AND company_id = $2' : ''}
+       AND company_id = $2
        AND DATE(timestamp) = CURRENT_DATE
      ORDER BY timestamp ASC
      LIMIT 1`,
-    !req.isSuperAdmin ? [req.user.id, req.companyId] : [req.user.id]
+    [req.user.id, req.companyId]
   );
 
   if (result.rows.length === 0) {

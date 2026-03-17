@@ -1,7 +1,5 @@
 // server.js
-console.log("🚀 SERVER IS INITIALIZING...");
-console.log("📅 DATE:", new Date().toISOString());
-import os from "os";
+// UPDATED: Added plan features and limitations
 
 import express from "express";
 import cors from "cors";
@@ -77,59 +75,51 @@ app.use("/api/license", authenticateToken, licenseRoutes);
 // COMPANY-SCOPED ROUTES (Authenticated + Company Context + Plan Features)
 // ============================================
 // ⚠️ IMPORTANT: attachPlanFeatures adds req.planFeatures to all these routes
-app.use("/clients",
-  authenticateToken,
-  attachCompanyContext,
+app.use("/clients", 
+  authenticateToken, 
+  attachCompanyContext, 
   attachPlanFeatures,  // ← NEW: Attaches plan features
   clientRoutes
 );
 
-app.use("/location-logs",
-  authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
+app.use("/location-logs", 
+  authenticateToken, 
+  attachCompanyContext, 
+  attachPlanFeatures,  // ← NEW
   locationRoutes
 );
 
-// ✅ ALIAS: Android app uses /location/logs — both paths work identically
-app.use("/location/logs",
-  authenticateToken,
-  attachCompanyContext,
-  attachPlanFeatures,
-  locationRoutes
-);
-
-app.use("/api/quick-visits",
-  authenticateToken,
-  attachCompanyContext,
+app.use("/api/quick-visits", 
+  authenticateToken, 
+  attachCompanyContext, 
   attachPlanFeatures,
   quickVisitsRoutes
 );
 
-app.use("/meetings",
-  authenticateToken,
-  attachCompanyContext,
+app.use("/meetings", 
+  authenticateToken, 
+  attachCompanyContext, 
   attachPlanFeatures,  // ← NEW
   meetingRoutes
 );
 
-app.use("/expenses",
-  authenticateToken,
-  attachCompanyContext,
+app.use("/expenses", 
+  authenticateToken, 
+  attachCompanyContext, 
   attachPlanFeatures,  // ← NEW
   expenseRoutes
 );
 
-app.use('/services',
-  authenticateToken,
-  attachCompanyContext,
+app.use('/services', 
+  authenticateToken, 
+  attachCompanyContext, 
   attachPlanFeatures,  // ← NEW
   servicesRoutes
 );
 
-app.use('/api/manual-clients',
-  authenticateToken,
-  attachCompanyContext,
+app.use('/api/manual-clients', 
+  authenticateToken, 
+  attachCompanyContext, 
   attachPlanFeatures,  // ← NEW
   manualClientRoutes
 );
@@ -137,9 +127,9 @@ app.use('/api/manual-clients',
 // ============================================
 // ADMIN ROUTES (Company Admin + Plan Features)
 // ============================================
-app.use("/admin",
-  authenticateToken,
-  attachCompanyContext,
+app.use("/admin", 
+  authenticateToken, 
+  attachCompanyContext, 
   attachPlanFeatures,  // ← NEW
   adminRoutes
 );
@@ -158,12 +148,12 @@ app.use("/api/sync", syncRoutes);
 // HEALTH CHECK
 // ============================================
 app.get("/", (req, res) => {
-  res.json({
+  res.json({ 
     message: "Multi-Company Client Tracking API with Plan-Based Limitations",
     version: "2.1.0",
     features: [
-      "company-scoped",
-      "super-admin",
+      "company-scoped", 
+      "super-admin", 
       "pincode-filtering",
       "plan-based-limitations"  // ← NEW
     ]
@@ -175,8 +165,8 @@ app.get("/dbtest", async (req, res) => {
     const result = await pool.query("SELECT NOW()");
     const companyCount = await pool.query("SELECT COUNT(*) FROM companies");
     const planCount = await pool.query("SELECT COUNT(*) FROM plan_features");
-
-    res.json({
+    
+    res.json({ 
       db_time: result.rows[0].now,
       companies: parseInt(companyCount.rows[0].count),
       plans_configured: parseInt(planCount.rows[0].count)  // ← NEW
@@ -189,25 +179,11 @@ app.get("/dbtest", async (req, res) => {
 // Error handling
 app.use(errorHandler);
 
-// Start server — bind to 0.0.0.0 so LAN/Wi-Fi devices (e.g. Android app) can connect
-app.listen(PORT, "0.0.0.0", () => {
-  // Detect local LAN IP for display
-  const nets = os.networkInterfaces();
-  let lanIP = "<your-local-ip>";
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
-      if (net.family === "IPv4" && !net.internal) {
-        lanIP = net.address;
-        break;
-      }
-    }
-  }
-  console.log(`🚀 Server running!`);
-  console.log(`   ➜  Local:   http://localhost:${PORT}`);
-  console.log(`   ➜  Network: http://${lanIP}:${PORT}  (use this for Android/Wi-Fi devices)`);
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🏢 Multi-company mode enabled`);
   console.log(`📍 Pincode-based filtering enabled`);
-  console.log(`💎 Plan-based limitations enabled`);
+  console.log(`💎 Plan-based limitations enabled`);  // ← NEW
   console.log(`📦 Request body limit: 10mb`);
-  console.log(`🌐 CORS: Accepting requests from configured origins`);
 });

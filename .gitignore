@@ -1,33 +1,5 @@
-# env files
-.env
-.env.*
-
-# dependencies
+# .gitignore
 node_modules/
-
-# OS generated files
+.env
 .DS_Store
-Thumbs.db
-
-# temp files
 *.log
-tmp_*
-temp_*
-*.zip
-*.docx
-check_*.js
-test_*.js
-fix_*.js
-debug_*
-*_output.js
-*_output.txt
-*_output.json
-Geo-Track/
-clear_*.js
-move_*.js
-count_*.js
-migrate.js
-seed_*.js
-temp_docx2/
-tmp_dump_output.json
-debug_result.json
