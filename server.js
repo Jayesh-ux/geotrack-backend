@@ -1,5 +1,6 @@
 // server.js
-// UPDATED: Added plan features and limitations + exposed on 0.0.0.0 for LAN access
+console.log("🚀 SERVER IS INITIALIZING...");
+console.log("📅 DATE:", new Date().toISOString());
 import os from "os";
 
 import express from "express";
