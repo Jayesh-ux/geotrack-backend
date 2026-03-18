@@ -191,9 +191,10 @@ CREATE TABLE IF NOT EXISTS "tally_sync_log" (
   "items_pushed_to_tally" integer DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS "pincodes" (
+DROP TABLE IF EXISTS "pincodes" CASCADE;
+CREATE TABLE "pincodes" (
   "id" SERIAL PRIMARY KEY,
-  "postal_code" VARCHAR(20) UNIQUE NOT NULL,
+  "pincode" VARCHAR(20) UNIQUE NOT NULL,
   "latitude" double precision NOT NULL,
   "longitude" double precision NOT NULL,
   "city" VARCHAR(100),
@@ -206,8 +207,8 @@ CREATE INDEX IF NOT EXISTS "idx_pincodes_spatial"
   ON "pincodes" USING gist (ll_to_earth("latitude", "longitude"));
 
 -- Standard index for direct portalcode lookups
-CREATE INDEX IF NOT EXISTS "idx_pincodes_postal_code"
-  ON "pincodes" ("postal_code");
+CREATE INDEX IF NOT EXISTS "idx_pincodes_pincode"
+  ON "pincodes" ("pincode");
 
 CREATE TABLE IF NOT EXISTS "tally_sync_conflicts" (
   "id" uuid NOT NULL DEFAULT gen_random_uuid(),

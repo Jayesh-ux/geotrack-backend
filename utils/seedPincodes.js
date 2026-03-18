@@ -79,10 +79,12 @@ async function ensureExtensions() {
 }
 
 async function ensureTable() {
+    // Table is created by 000_full_schema.sql with column name 'pincode' (not 'postal_code').
+    // We just make sure the table exists with the correct schema.
     await pool.query(`
     CREATE TABLE IF NOT EXISTS pincodes (
       id         SERIAL PRIMARY KEY,
-      postal_code VARCHAR(20) UNIQUE NOT NULL,
+      pincode    VARCHAR(20) UNIQUE NOT NULL,
       latitude   DOUBLE PRECISION NOT NULL,
       longitude  DOUBLE PRECISION NOT NULL,
       city       VARCHAR(100),
@@ -118,9 +120,9 @@ async function seedFromCSV(csvPath) {
 
         try {
             await pool.query(
-                `INSERT INTO pincodes (postal_code, latitude, longitude, city, state)
+                `INSERT INTO pincodes (pincode, latitude, longitude, city, state)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (postal_code) DO NOTHING`,
+         ON CONFLICT (pincode) DO NOTHING`,
                 [postal_code, latitude, longitude, city, state]
             );
             inserted++;
@@ -134,9 +136,9 @@ async function seedSampleData() {
     for (const row of SAMPLE_PINCODES) {
         try {
             await pool.query(
-                `INSERT INTO pincodes (postal_code, latitude, longitude, city, state)
+                `INSERT INTO pincodes (pincode, latitude, longitude, city, state)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (postal_code) DO NOTHING`,
+         ON CONFLICT (pincode) DO NOTHING`,
                 [row.postalcode, row.latitude, row.longitude, row.city, row.state]
             );
             inserted++;
@@ -175,14 +177,14 @@ async function main() {
 
         // Verify the spatial index works
         const test = await pool.query(`
-      SELECT postal_code, city,
+      SELECT pincode, city,
              earth_distance(ll_to_earth(latitude, longitude), ll_to_earth(18.9322, 72.8264)) AS dist
       FROM pincodes
       ORDER BY ll_to_earth(latitude, longitude) <-> ll_to_earth(18.9322, 72.8264)
       LIMIT 1
     `);
         if (test.rows.length > 0) {
-            console.log(`\n🧪 Spatial test: nearest to Mumbai CST → ${test.rows[0].postal_code} (${test.rows[0].city}) at ${parseFloat(test.rows[0].dist).toFixed(0)}m`);
+            console.log(`\n🧪 Spatial test: nearest to Mumbai CST → ${test.rows[0].pincode} (${test.rows[0].city}) at ${parseFloat(test.rows[0].dist).toFixed(0)}m`);
             console.log(`\n🚀 PostGIS-first geocoding is READY!`);
         }
 

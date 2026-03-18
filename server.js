@@ -224,14 +224,14 @@ app.get("/force-seed-active-db", async (req, res) => {
       if (checkUser.rows.length > 0) {
         userId = checkUser.rows[0].id;
         await client.query(
-          "UPDATE users SET password = $1, is_admin = $2, company_id = $3 WHERE id = $4",
-          [hash, u.isAdmin, finalCompanyId, userId]
+          "UPDATE users SET password = $1, is_admin = $2, company_id = $3, pincode = $4 WHERE id = $5",
+          [hash, u.isAdmin, finalCompanyId, u.isAdmin ? null : "400604", userId]
         );
       } else {
         userId = crypto.randomUUID();
         await client.query(
-          "INSERT INTO users (id, email, password, is_admin, company_id) VALUES ($1, $2, $3, $4, $5)",
-          [userId, u.email, hash, u.isAdmin, finalCompanyId]
+          "INSERT INTO users (id, email, password, is_admin, company_id, pincode) VALUES ($1, $2, $3, $4, $5, $6)",
+          [userId, u.email, hash, u.isAdmin, finalCompanyId, u.isAdmin ? null : "400604"]
         );
       }
       
