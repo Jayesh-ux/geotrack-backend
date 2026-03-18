@@ -93,7 +93,10 @@ CREATE TABLE IF NOT EXISTS "users" (
   "is_super_admin" boolean DEFAULT false,
   "auth_source" text DEFAULT 'local',
   "is_trial_user" boolean DEFAULT false,
-  "total_received_amount" numeric DEFAULT 0
+  "total_received_amount" numeric DEFAULT 0,
+  "last_seen" TIMESTAMPTZ,
+  "battery_percentage" integer,
+  "current_activity" text
 );
 
 CREATE TABLE IF NOT EXISTS "tally_sync_history" (

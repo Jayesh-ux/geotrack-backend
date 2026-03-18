@@ -83,6 +83,7 @@ export const getAllUsers = async (req, res) => {
   // ✅ UPDATED: Add company_id filter (unless super admin)
   let query = `
     SELECT u.id, u.email, u.created_at, u.pincode, u.is_admin, u.is_super_admin,
+           u.last_seen, u.battery_percentage, u.current_activity,
            p.full_name, p.department, p.work_hours_start, p.work_hours_end
     FROM users u
     LEFT JOIN profiles p ON u.id = p.user_id
@@ -564,6 +565,7 @@ export const getUserDetails = async (req, res) => {
 
   const result = await pool.query(
     `SELECT u.id, u.email, u.is_admin, u.is_super_admin, u.created_at, u.pincode, u.company_id,
+            u.last_seen, u.battery_percentage, u.current_activity,
             p.full_name, p.department, p.work_hours_start, p.work_hours_end,
             c.name as company_name, c.subdomain as company_subdomain
      FROM users u

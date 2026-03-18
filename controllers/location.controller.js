@@ -23,13 +23,35 @@ export const createLocationLog = async (req, res) => {
     [req.user.id, latitude, longitude, accuracy || null, activity || null, notes || null, pincode, battery || null, req.companyId]
   );
 
+  // ✅ UPDATED: Update user real-time status (pincode, last_seen, battery, activity)
+  let userUpdateQuery = "UPDATE users SET last_seen = NOW()";
+  const userUpdateParams = [];
+  let paramIdx = 0;
+
   if (pincode) {
-    await pool.query(
-      `UPDATE users SET pincode = $1 WHERE id = $2 AND pincode IS DISTINCT FROM $1`,
-      [pincode, req.user.id]
-    );
-    console.log(`📌 Updated user pincode to ${pincode}`);
+    paramIdx++;
+    userUpdateQuery += `, pincode = $${paramIdx}`;
+    userUpdateParams.push(pincode);
   }
+
+  if (battery !== undefined && battery !== null) {
+    paramIdx++;
+    userUpdateQuery += `, battery_percentage = $${paramIdx}`;
+    userUpdateParams.push(battery);
+  }
+
+  if (activity) {
+    paramIdx++;
+    userUpdateQuery += `, current_activity = $${paramIdx}`;
+    userUpdateParams.push(activity);
+  }
+
+  paramIdx++;
+  userUpdateQuery += ` WHERE id = $${paramIdx}`;
+  userUpdateParams.push(req.user.id);
+
+  await pool.query(userUpdateQuery, userUpdateParams);
+  console.log(`📌 Updated user ${req.user.id} status (Pincode: ${pincode}, Battery: ${battery}%)`);
 
   const log = result.rows[0];
   const mappedLog = {
@@ -85,6 +107,7 @@ export const getLocationLogs = async (req, res) => {
     latitude: log.latitude,
     longitude: log.longitude,
     accuracy: log.accuracy,
+    battery: log.battery,
     activity: log.activity,
     notes: log.notes,
     pincode: log.pincode,
