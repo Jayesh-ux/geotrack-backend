@@ -393,12 +393,53 @@ export const getClients = async (req, res) => {
   }
 
   // LOCAL MODE - Filter by user's pincode
-  const userPincode = (await pool.query("SELECT pincode FROM users WHERE id = $1", [req.user.id])).rows[0]?.pincode;
-  
+  // Admins always see all clients in the company (remote mode behaviour).
+  if (req.user.isAdmin) {
+    console.log(`👑 Admin user - skipping pincode filter, returning all company clients`);
+    const adminQuery = `
+      SELECT ${CLIENT_SELECT_FIELDS}
+      FROM clients
+      WHERE company_id = $1
+      ORDER BY last_visit_date DESC NULLS LAST, created_at DESC
+      LIMIT $2 OFFSET $3
+    `;
+    const adminResult = await pool.query(adminQuery, [req.companyId, parseInt(limit), parseInt(offset)]);
+    const adminCount = parseInt((await pool.query("SELECT COUNT(*) FROM clients WHERE company_id = $1", [req.companyId])).rows[0].count);
+    return res.json({
+      clients: adminResult.rows,
+      userPincode: null,
+      filteredByPincode: false,
+      searchMode: 'remote',
+      pagination: { page: parseInt(page), limit: parseInt(limit), total: adminCount, totalPages: Math.ceil(adminCount / limit) }
+    });
+  }
+
+  const userRow = (await pool.query("SELECT pincode FROM users WHERE id = $1", [req.user.id])).rows[0];
+  const userPincode = userRow?.pincode;
+
+  // Agent has no pincode yet (location not yet saved from device).
+  // Fall back to showing all company clients so the screen is not blank.
   if (!userPincode) {
-    return res.status(400).json({ 
-      error: "NoPincodeFound",
-      message: "Please enable location tracking first. No location data available."
+    console.log(`⚠️ Agent ${req.user.id} has no pincode yet — falling back to all-company clients`);
+    const fallbackQuery = `
+      SELECT ${CLIENT_SELECT_FIELDS}
+      FROM clients
+      WHERE company_id = $1
+      AND (created_by IS NULL OR created_by = $2)
+      ORDER BY last_visit_date DESC NULLS LAST, created_at DESC
+      LIMIT $3 OFFSET $4
+    `;
+    const fallbackResult = await pool.query(fallbackQuery, [req.companyId, req.user.id, parseInt(limit), parseInt(offset)]);
+    const fallbackCount = parseInt((await pool.query(
+      "SELECT COUNT(*) FROM clients WHERE company_id = $1 AND (created_by IS NULL OR created_by = $2)",
+      [req.companyId, req.user.id]
+    )).rows[0].count);
+    return res.json({
+      clients: fallbackResult.rows,
+      userPincode: null,
+      filteredByPincode: false,
+      searchMode: 'local_fallback',
+      pagination: { page: parseInt(page), limit: parseInt(limit), total: fallbackCount, totalPages: Math.ceil(fallbackCount / limit) }
     });
   }
 
