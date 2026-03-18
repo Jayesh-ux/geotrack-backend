@@ -8,6 +8,8 @@ console.log("==========================================");
 
 import express from "express";
 import cors from "cors";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { pool } from "./db.js";
 import { CORS_ORIGIN, PORT } from "./config/constants.js";
 import { errorHandler } from "./middleware/errorHandler.js";
@@ -179,6 +181,64 @@ app.get("/dbtest", async (req, res) => {
       companies: parseInt(companyCount.rows[0].count),
       plans_configured: parseInt(planCount.rows[0].count)  // ← NEW
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// EMERGENCY SEED ROUTE (Remove after use)
+// ============================================
+app.get("/force-seed-active-db", async (req, res) => {
+  try {
+    const password = "password123";
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(password, salt);
+
+    // 1. Ensure a test company exists
+    let finalCompanyId;
+    const checkCompany = await pool.query("SELECT id FROM companies WHERE subdomain = $1", ["test"]);
+    if (checkCompany.rows.length > 0) {
+      finalCompanyId = checkCompany.rows[0].id;
+    } else {
+      const companyRes = await pool.query(
+        "INSERT INTO companies (id, name, subdomain) VALUES ($1, $2, $3) RETURNING id",
+        [crypto.randomUUID(), "Lodha Supremus Enterprises", "test"]
+      );
+      finalCompanyId = companyRes.rows[0].id;
+    }
+
+    // 2. Create Users
+    const users = [
+      { email: "admin@test.com", isAdmin: true },
+      { email: "agent@test.com", isAdmin: false }
+    ];
+
+    for (const u of users) {
+      const userRes = await pool.query(
+        "INSERT INTO users (id, email, password, is_admin, company_id) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (email) DO UPDATE SET password = $3, is_admin = $4, company_id = $5 RETURNING id",
+        [crypto.randomUUID(), u.email, hash, u.isAdmin, finalCompanyId]
+      );
+      
+      await pool.query(
+        "INSERT INTO profiles (user_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        [userRes.rows[0].id, u.isAdmin ? "Admin User" : "Agent User"]
+      );
+    }
+
+    // 3. Seed 10 Clients
+    const centerLat = 19.19825;
+    const centerLng = 72.94904;
+    for (let i = 1; i <= 10; i++) {
+      const latDelta = (Math.random() - 0.5) * 0.01;
+      const lngDelta = (Math.random() - 0.5) * 0.01;
+      await pool.query(
+        "INSERT INTO clients (id, name, address, pincode, latitude, longitude, company_id) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        [crypto.randomUUID(), `Client ${i}`, `Address near Lodha ${i}`, "400604", centerLat + latDelta, centerLng + lngDelta, finalCompanyId]
+      );
+    }
+
+    res.json({ message: "Seeding complete!", companyId: finalCompanyId, users: users.map(u => u.email) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
