@@ -82,7 +82,7 @@ export const getAllUsers = async (req, res) => {
   
   // ✅ UPDATED: Add company_id filter (unless super admin)
   let query = `
-    SELECT u.id, u.email, u.created_at, u.pincode, u.is_admin, u.is_super_admin,
+    SELECT u.id, u.email, u.created_at, u.pincode, u.is_admin, u.is_super_admin, u.is_active,
            u.last_seen, u.battery_percentage, u.current_activity,
            p.full_name, p.department, p.work_hours_start, p.work_hours_end
     FROM users u
@@ -596,7 +596,7 @@ export const getUserDetails = async (req, res) => {
   }
 
   const result = await pool.query(
-    `SELECT u.id, u.email, u.is_admin, u.is_super_admin, u.created_at, u.pincode, u.company_id,
+    `SELECT u.id, u.email, u.is_admin, u.is_super_admin, u.is_active, u.created_at, u.pincode, u.company_id,
             u.last_seen, u.battery_percentage, u.current_activity,
             p.full_name, p.department, p.work_hours_start, p.work_hours_end,
             c.name as company_name, c.subdomain as company_subdomain
@@ -683,7 +683,7 @@ export const createUser = async (req, res) => {
 // Update user (admin version)
 export const updateUser = async (req, res) => {
   const { userId } = req.params;
-  const { email, fullName, department, workHoursStart, workHoursEnd, isAdmin } = req.body;
+  const { email, fullName, department, workHoursStart, workHoursEnd, isAdmin, isActive } = req.body;
 
   // ✅ UPDATED: Verify user belongs to admin's company (unless super admin)
   const companyFilter = req.isSuperAdmin ? '' : 'AND company_id = $2';
@@ -736,8 +736,15 @@ export const updateUser = async (req, res) => {
       params.push(isAdmin);
     }
 
+    if (isActive !== undefined) {
+      if (paramCount > 0) query += ",";
+      paramCount++;
+      query += ` is_active = $${paramCount}`;
+      params.push(isActive);
+    }
+
     paramCount++;
-    query += ` WHERE id = $${paramCount} RETURNING id, email, is_admin`;
+    query += ` WHERE id = $${paramCount} RETURNING id, email, is_admin, is_active`;
     params.push(userId);
 
     await pool.query(query, params);

@@ -25,7 +25,8 @@ export const login = async (req, res) => {
        c.name as company_name,
        c.subdomain as company_subdomain,
        c.is_active as company_active,
-       c.email_domain as company_email_domain
+       c.email_domain as company_email_domain,
+       u.is_active as user_active
      FROM users u
      LEFT JOIN profiles p ON u.id = p.user_id
      LEFT JOIN companies c ON u.company_id = c.id
@@ -55,6 +56,13 @@ export const login = async (req, res) => {
     return res.status(403).json({ 
       error: "CompanyInactive",
       message: "Your company account is currently inactive. Contact super admin." 
+    });
+  }
+
+  if (user.user_active === false) {
+    return res.status(403).json({ 
+      error: "UserInactive",
+      message: "Your account has been disabled by an administrator." 
     });
   }
 

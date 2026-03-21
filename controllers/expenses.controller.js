@@ -152,7 +152,7 @@ export const createExpense = async (req, res) => {
         notes,
         finalReceiptImages,
         finalClientId,
-        req.companyId // ✅ Added company_id
+        req.user?.companyId || req.companyId // ✅ Added company_id
       ]
     );
 
@@ -223,10 +223,12 @@ export const getMyExpenses = async (req, res) => {
   let params;
   let count;
 
+  const companyId = req.user?.companyId || req.companyId;
+
   if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
     // Admin fetching all company expenses
     query = `SELECT * FROM trip_expenses WHERE company_id = $1`;
-    params = [req.companyId];
+    params = [companyId];
     count = 1;
   } else {
     // Single user expenses (default or specific ID)
@@ -235,7 +237,7 @@ export const getMyExpenses = async (req, res) => {
       queryId = userId;
     }
     query = `SELECT * FROM trip_expenses WHERE user_id = $1 AND company_id = $2`;
-    params = [queryId, req.companyId];
+    params = [queryId, companyId];
     count = 2;
   }
 

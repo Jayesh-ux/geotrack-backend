@@ -73,6 +73,24 @@ router.put("/:id",
 );
 
 // ============================================
+// UPDATE CLIENT ADDRESS & GEOCODE (Phase 4)
+// ============================================
+router.patch("/:id/address",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(clientsController.updateAddress)
+);
+
+// ============================================
+// UPDATE CLIENT LOCATION (Phase 1)
+// ============================================
+router.patch("/:id/location",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(clientsController.updateLocation)
+);
+
+// ============================================
 // DELETE CLIENT
 // ============================================
 // Blocked for trial users

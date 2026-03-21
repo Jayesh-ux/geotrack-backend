@@ -255,6 +255,87 @@ export const uploadExcel = async (req, res) => {
   }
 };
 
+// ============================================
+// UPDATE CLIENT ADDRESS & GEOCODE (Phase 4)
+// ============================================
+export const updateAddress = async (req, res) => {
+  const { id } = req.params;
+  const { address } = req.body;
+  const companyId = req.user.companyId;
+
+  if (!address) {
+    return res.status(400).json({ error: "Address is required" });
+  }
+
+  try {
+    // 1. Update address in DB
+    const updateResult = await pool.query(
+      `UPDATE clients SET address = $1, updated_at = NOW() 
+       WHERE id = $2 AND (company_id = $3 OR $4 = true)
+       RETURNING *`,
+      [address, id, companyId, req.user.isAdmin]
+    );
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    const client = updateResult.rows[0];
+
+    // 2. Trigger Geocoding (Phase 4 Fallback)
+    const { geocodeSingleClientWithStrategies } = await import("../utils/geocodeBatch.js");
+    const geoResult = await geocodeSingleClientWithStrategies(client);
+
+    if (geoResult.success) {
+      // Re-fetch with new coordinates
+      const finalResult = await pool.query("SELECT * FROM clients WHERE id = $1", [id]);
+      return res.json(finalResult.rows[0]);
+    }
+
+    // Return client even if geocoding failed (will show as hidden/missing GPS)
+    res.json(client);
+  } catch (err) {
+    console.error("Error updating address:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// ============================================
+// UPDATE CLIENT LOCATION DIRECTLY (Phase 1)
+// ============================================
+export const updateLocation = async (req, res) => {
+  const { id } = req.params;
+  const { latitude, longitude, accuracy } = req.body;
+  const companyId = req.user.companyId;
+
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: "Latitude and longitude are required" });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE clients 
+       SET latitude = $1, 
+           longitude = $2, 
+           notes = COALESCE(notes, '') || '\n[GPS Tagged at ' || NOW() || ' with ' || $3 || 'm accuracy]',
+           updated_at = NOW() 
+       WHERE id = $4 AND (company_id = $5 OR $6 = true)
+       RETURNING *`,
+      [latitude, longitude, accuracy || 'unknown', id, companyId, req.user.isAdmin]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error updating location:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
 export const createClient = async (req, res) => {
   const { name, email, phone, address, latitude, longitude, status, notes } = req.body;
 
@@ -288,7 +369,8 @@ export const getClients = async (req, res) => {
     status, 
     search, 
     page = 1, 
-    limit = 100, 
+    // ✅ UPDATED: Increase limit to 2000 to show all 1924+ clients for large companies
+    limit = 2000, 
     searchMode = 'local'
   } = req.query;
   
@@ -298,20 +380,23 @@ export const getClients = async (req, res) => {
 
   // ✅ UPDATED: Add company filter to all queries
   if (searchMode === 'remote') {
-    console.log(`🌐 Remote search mode | Company: ${req.companyId} | SuperAdmin: ${req.isSuperAdmin}`);
+    const isSuperAdmin = req.isSuperAdmin || req.user?.isSuperAdmin;
+    const companyId = req.companyId || req.user?.companyId;
+
+    console.log(`🌐 Remote search mode | Company: ${companyId} | SuperAdmin: ${isSuperAdmin}`);
 
     let query = `SELECT ${CLIENT_SELECT_FIELDS} FROM clients WHERE 1=1`;
     const params = [];
     
-    if (req.companyId) {
-      query += ` AND company_id = $${params.push(req.companyId)}`;
-    } else if (!req.isSuperAdmin) {
+    if (companyId) {
+      query += ` AND company_id = $${params.push(companyId)}`;
+    } else if (!isSuperAdmin) {
       // Regular users MUST have a companyId, but if it leaked through, enforce it here
       return res.status(403).json({ error: "NoCompanyContext" });
     }
     
     // Only filter by created_by for regular agents
-    if (!req.user.isAdmin && !req.isSuperAdmin) {
+    if (!req.user.isAdmin && !isSuperAdmin) {
       query += ` AND (created_by IS NULL OR created_by = $${params.push(req.user.id)})`;
     }
 
@@ -358,12 +443,12 @@ export const getClients = async (req, res) => {
     let countQuery = "SELECT COUNT(*) FROM clients WHERE 1=1";
     const countParams = [];
     
-    if (req.companyId) {
-      countQuery += ` AND company_id = $${countParams.push(req.companyId)}`;
+    if (companyId) {
+      countQuery += ` AND company_id = $${countParams.push(companyId)}`;
     }
     
     // Only filter by created_by for regular agents
-    if (!req.user.isAdmin && !req.isSuperAdmin) {
+    if (!req.user.isAdmin && !isSuperAdmin) {
       countQuery += ` AND (created_by IS NULL OR created_by = $${countParams.push(req.user.id)})`;
     }
 

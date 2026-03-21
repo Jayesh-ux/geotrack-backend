@@ -91,6 +91,7 @@ export const updateMeeting = async (req, res) => {
     }
 
     const clientId = checkResult.rows[0].client_id;
+    const companyId = req.user?.companyId || req.companyId;
 
     // Update meeting
     const meetingResult = await client.query(
@@ -140,10 +141,28 @@ export const updateMeeting = async (req, res) => {
         `UPDATE clients 
          SET status = $1, updated_at = NOW() 
          WHERE id = $2 AND company_id = $3`,
-        [clientStatus.toLowerCase(), clientId, req.companyId]
+        [clientStatus.toLowerCase(), clientId, companyId]
       );
       
       console.log(`✅ Client ${clientId} status updated to: ${clientStatus}`);
+    }
+
+    // ✅ Phase 1: Self-Learning - Update client location if missing
+    if (latitude && longitude) {
+      const clientLocCheck = await client.query(
+        "SELECT latitude, longitude FROM clients WHERE id = $1",
+        [clientId]
+      );
+      
+      if (clientLocCheck.rows.length > 0 && (!clientLocCheck.rows[0].latitude || !clientLocCheck.rows[0].longitude)) {
+        await client.query(
+          `UPDATE clients 
+           SET latitude = $1, longitude = $2, updated_at = NOW() 
+           WHERE id = $3 AND company_id = $4`,
+          [latitude, longitude, clientId, companyId]
+        );
+        console.log(`📍 Phase 1 (Self-Learning): Auto-updated client ${clientId} location from meeting`);
+      }
     }
 
     await client.query('COMMIT');
@@ -252,7 +271,8 @@ export const uploadAttachment = async (req, res) => {
 };
 
 export const getMeetings = async (req, res) => {
-  const { clientId, status, startDate, endDate, page = 1, limit = 50 } = req.query;
+  const { userId, clientId, status, startDate, endDate, page = 1, limit = 50 } = req.query;
+  const companyId = req.user?.companyId || req.companyId;
   const offset = (page - 1) * limit;
 
   let queryBase;
@@ -262,7 +282,7 @@ export const getMeetings = async (req, res) => {
   if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
     // Admin fetching all company meetings
     queryBase = `FROM meetings m LEFT JOIN clients c ON m.client_id = c.id WHERE m.company_id = $1`;
-    params = [req.companyId];
+    params = [companyId];
     paramCount = 1;
   } else {
     // Single user meetings
@@ -271,7 +291,7 @@ export const getMeetings = async (req, res) => {
       queryId = userId;
     }
     queryBase = `FROM meetings m LEFT JOIN clients c ON m.client_id = c.id WHERE m.user_id = $1 AND m.company_id = $2`;
-    params = [queryId, req.companyId];
+    params = [queryId, companyId];
     paramCount = 2;
   }
 
@@ -333,14 +353,14 @@ export const getMeetings = async (req, res) => {
 
   if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
     countQuery = "SELECT COUNT(*) FROM meetings WHERE company_id = $1";
-    countParams = [req.companyId];
+    countParams = [companyId];
   } else {
     let queryId = req.user.id;
     if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
       queryId = userId;
     }
     countQuery = "SELECT COUNT(*) FROM meetings WHERE user_id = $1 AND company_id = $2";
-    countParams = [queryId, req.companyId];
+    countParams = [queryId, companyId];
   }
   
   const countResult = await pool.query(countQuery, countParams);
