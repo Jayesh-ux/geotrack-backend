@@ -85,10 +85,16 @@ export const getLocationLogs = async (req, res) => {
   const { startDate, endDate, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
 
-  // ✅ UPDATED: Add company_id filter
-  let query = "SELECT * FROM location_logs WHERE user_id = $1 AND company_id = $2";
-  const params = [req.user.id, req.companyId];
-  let paramCount = 2;
+  // ✅ UPDATED: Add company_id filter (skip for super admin)
+  let query = "SELECT * FROM location_logs WHERE user_id = $1";
+  const params = [req.user.id];
+  let paramCount = 1;
+
+  if (!req.isSuperAdmin && req.companyId) {
+    paramCount++;
+    query += ` AND company_id = $${paramCount}`;
+    params.push(req.companyId);
+  }
 
   if (startDate) {
     paramCount++;
@@ -134,17 +140,23 @@ export const getLocationLogs = async (req, res) => {
 };
 
 export const getClockIn = async (req, res) => {
-  // ✅ UPDATED: Add company_id filter
-  const result = await pool.query(
-    `SELECT latitude, longitude, timestamp
+  // ✅ UPDATED: Add company_id filter (skip for super admin)
+  let clockQuery = `SELECT latitude, longitude, timestamp
      FROM location_logs
      WHERE user_id = $1
-       AND company_id = $2
-       AND DATE(timestamp) = CURRENT_DATE
-     ORDER BY timestamp ASC
-     LIMIT 1`,
-    [req.user.id, req.companyId]
-  );
+       AND DATE(timestamp) = CURRENT_DATE`;
+  const clockParams = [req.user.id];
+  let clockParamCount = 1;
+
+  if (!req.isSuperAdmin && req.companyId) {
+    clockParamCount++;
+    clockQuery += ` AND company_id = $${clockParamCount}`;
+    clockParams.push(req.companyId);
+  }
+
+  clockQuery += ` ORDER BY timestamp ASC LIMIT 1`;
+
+  const result = await pool.query(clockQuery, clockParams);
 
   if (result.rows.length === 0) {
     return res.json({ clockIn: null });
@@ -160,19 +172,25 @@ export const getDailySummary = async (req, res) => {
   const { date } = req.query; // YYYY-MM-DD, defaults to today
   const userId = req.user.id;
   const companyId = req.companyId;
+  const isSuperAdmin = req.isSuperAdmin;
 
   const targetDate = date || new Date().toISOString().slice(0, 10);
   const dayStart = `${targetDate} 00:00:00`;
   const dayEnd   = `${targetDate} 23:59:59.999`;
 
+  // Build company filter dynamically
+  const companyFilter = (!isSuperAdmin && companyId) ? 'AND company_id = $2' : '';
+  const baseParams = (!isSuperAdmin && companyId) ? [userId, companyId] : [userId];
+  const dateParamStart = baseParams.length + 1;
+
   // 1. Location logs for the day (for distance & GPS point count)
   const logsResult = await pool.query(
     `SELECT latitude, longitude, activity as "markActivity", notes as "markNotes", battery, accuracy, timestamp
      FROM location_logs
-     WHERE user_id = $1 AND company_id = $2
-       AND timestamp >= $3 AND timestamp <= $4
+     WHERE user_id = $1 ${companyFilter}
+       AND timestamp >= $${dateParamStart} AND timestamp <= $${dateParamStart + 1}
      ORDER BY timestamp ASC`,
-    [userId, companyId, dayStart, dayEnd]
+    [...baseParams, dayStart, dayEnd]
   );
 
   // 2. Meetings for the day
@@ -182,22 +200,24 @@ export const getDailySummary = async (req, res) => {
             c.name as "clientName"
      FROM meetings m
      LEFT JOIN clients c ON m.client_id = c.id
-     WHERE m.user_id = $1 AND m.company_id = $2
-       AND m.start_time >= $3 AND m.start_time <= $4
+     WHERE m.user_id = $1 ${companyFilter ? companyFilter.replace('company_id', 'm.company_id') : ''}
+       AND m.start_time >= $${dateParamStart} AND m.start_time <= $${dateParamStart + 1}
      ORDER BY m.start_time ASC`,
-    [userId, companyId, dayStart, dayEnd]
+    [...baseParams, dayStart, dayEnd]
   );
 
   // 3. Expenses for the day
+  const expenseCompanyFilter = (!isSuperAdmin && companyId) ? 'AND company_id = $2' : '';
+  const expenseDateParam = baseParams.length + 1;
   const expensesResult = await pool.query(
     `SELECT id, trip_name as "tripName", start_location as "startLocation",
             end_location as "endLocation", distance_km as "distanceKm",
             transport_mode as "transportMode", amount_spent as "amountSpent", travel_date as "travelDate"
      FROM trip_expenses
-     WHERE user_id = $1 AND company_id = $2
-       AND travel_date::date = $3::date
+     WHERE user_id = $1 ${expenseCompanyFilter}
+       AND travel_date::date = $${expenseDateParam}::date
      ORDER BY created_at ASC`,
-    [userId, companyId, targetDate]
+    [...baseParams, targetDate]
   );
 
   // Compute simple haversine distance from ordered location logs

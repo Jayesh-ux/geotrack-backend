@@ -394,17 +394,43 @@ export const getClients = async (req, res) => {
 
   // LOCAL MODE - Filter by user's pincode
   // Admins always see all clients in the company (remote mode behaviour).
-  if (req.user.isAdmin) {
-    console.log(`👑 Admin user - skipping pincode filter, returning all company clients`);
-    const adminQuery = `
-      SELECT ${CLIENT_SELECT_FIELDS}
-      FROM clients
-      WHERE company_id = $1
-      ORDER BY last_visit_date DESC NULLS LAST, created_at DESC
-      LIMIT $2 OFFSET $3
-    `;
-    const adminResult = await pool.query(adminQuery, [req.companyId, parseInt(limit), parseInt(offset)]);
-    const adminCount = parseInt((await pool.query("SELECT COUNT(*) FROM clients WHERE company_id = $1", [req.companyId])).rows[0].count);
+  // SuperAdmins see ALL clients across ALL companies.
+  if (req.user.isAdmin || req.isSuperAdmin) {
+    const isSuperAdmin = req.isSuperAdmin;
+    console.log(`👑 ${isSuperAdmin ? 'Super Admin' : 'Admin'} user - returning ${isSuperAdmin ? 'all' : 'company'} clients`);
+    
+    let adminQuery;
+    let adminParams;
+    let adminCountQuery;
+    let adminCountParams;
+    
+    if (isSuperAdmin) {
+      // SuperAdmin: no company filter
+      adminQuery = `
+        SELECT ${CLIENT_SELECT_FIELDS}
+        FROM clients
+        ORDER BY last_visit_date DESC NULLS LAST, created_at DESC
+        LIMIT $1 OFFSET $2
+      `;
+      adminParams = [parseInt(limit), parseInt(offset)];
+      adminCountQuery = "SELECT COUNT(*) FROM clients";
+      adminCountParams = [];
+    } else {
+      // Regular Admin: filter by company
+      adminQuery = `
+        SELECT ${CLIENT_SELECT_FIELDS}
+        FROM clients
+        WHERE company_id = $1
+        ORDER BY last_visit_date DESC NULLS LAST, created_at DESC
+        LIMIT $2 OFFSET $3
+      `;
+      adminParams = [req.companyId, parseInt(limit), parseInt(offset)];
+      adminCountQuery = "SELECT COUNT(*) FROM clients WHERE company_id = $1";
+      adminCountParams = [req.companyId];
+    }
+    
+    const adminResult = await pool.query(adminQuery, adminParams);
+    const adminCount = parseInt((await pool.query(adminCountQuery, adminCountParams)).rows[0].count);
     return res.json({
       clients: adminResult.rows,
       userPincode: null,
