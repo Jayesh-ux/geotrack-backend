@@ -298,20 +298,23 @@ export const getClients = async (req, res) => {
 
   // ✅ UPDATED: Add company filter to all queries
   if (searchMode === 'remote') {
-    console.log(`🌐 Remote search mode`);
+    console.log(`🌐 Remote search mode | Company: ${req.companyId} | SuperAdmin: ${req.isSuperAdmin}`);
 
-    let query = `
-      SELECT ${CLIENT_SELECT_FIELDS}
-  FROM clients
-  WHERE company_id = $1
-    `;
-    const params = [req.companyId]; 
+    let query = `SELECT ${CLIENT_SELECT_FIELDS} FROM clients WHERE 1=1`;
+    const params = [];
+    
+    if (req.companyId) {
+      query += ` AND company_id = $${params.push(req.companyId)}`;
+    } else if (!req.isSuperAdmin) {
+      // Regular users MUST have a companyId, but if it leaked through, enforce it here
+      return res.status(403).json({ error: "NoCompanyContext" });
+    }
     
     // Only filter by created_by for regular agents
     if (!req.user.isAdmin && !req.isSuperAdmin) {
-      query += ` AND (created_by IS NULL OR created_by = $2)`;
-      params.push(req.user.id);
+      query += ` AND (created_by IS NULL OR created_by = $${params.push(req.user.id)})`;
     }
+
     
     let paramCount = params.length;
 
@@ -352,14 +355,18 @@ export const getClients = async (req, res) => {
     const result = await pool.query(query, params);
 
     // Count query
-    let countQuery = "SELECT COUNT(*) FROM clients WHERE company_id = $1";
-    const countParams = [req.companyId]; 
+    let countQuery = "SELECT COUNT(*) FROM clients WHERE 1=1";
+    const countParams = [];
+    
+    if (req.companyId) {
+      countQuery += ` AND company_id = $${countParams.push(req.companyId)}`;
+    }
     
     // Only filter by created_by for regular agents
     if (!req.user.isAdmin && !req.isSuperAdmin) {
-      countQuery += ` AND (created_by IS NULL OR created_by = $2)`;
-      countParams.push(req.user.id);
+      countQuery += ` AND (created_by IS NULL OR created_by = $${countParams.push(req.user.id)})`;
     }
+
     
     let countParamIndex = countParams.length;
 
