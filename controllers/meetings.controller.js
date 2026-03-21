@@ -255,7 +255,26 @@ export const getMeetings = async (req, res) => {
   const { clientId, status, startDate, endDate, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
 
-  // ✅ UPDATED: Add company_id filter
+  let queryBase;
+  let params;
+  let paramCount;
+
+  if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
+    // Admin fetching all company meetings
+    queryBase = `FROM meetings m LEFT JOIN clients c ON m.client_id = c.id WHERE m.company_id = $1`;
+    params = [req.companyId];
+    paramCount = 1;
+  } else {
+    // Single user meetings
+    let queryId = req.user.id;
+    if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
+      queryId = userId;
+    }
+    queryBase = `FROM meetings m LEFT JOIN clients c ON m.client_id = c.id WHERE m.user_id = $1 AND m.company_id = $2`;
+    params = [queryId, req.companyId];
+    paramCount = 2;
+  }
+
   let query = `
     SELECT 
       m.id,
@@ -276,12 +295,8 @@ export const getMeetings = async (req, res) => {
       m.updated_at as "updatedAt",
       c.name as "clientName",
       c.address as "clientAddress"
-    FROM meetings m
-    LEFT JOIN clients c ON m.client_id = c.id
-    WHERE m.user_id = $1 AND m.company_id = $2
+    ${queryBase}
   `;
-  const params = [req.user.id, req.companyId];
-  let paramCount = 2;
 
   if (clientId) {
     paramCount++;
@@ -313,8 +328,21 @@ export const getMeetings = async (req, res) => {
   const result = await pool.query(query, params);
 
   // ✅ UPDATED: Add company_id filter to count query
-  let countQuery = "SELECT COUNT(*) FROM meetings WHERE user_id = $1 AND company_id = $2";
-  const countParams = [req.user.id, req.companyId];
+  let countQuery;
+  let countParams;
+
+  if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
+    countQuery = "SELECT COUNT(*) FROM meetings WHERE company_id = $1";
+    countParams = [req.companyId];
+  } else {
+    let queryId = req.user.id;
+    if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
+      queryId = userId;
+    }
+    countQuery = "SELECT COUNT(*) FROM meetings WHERE user_id = $1 AND company_id = $2";
+    countParams = [queryId, req.companyId];
+  }
+  
   const countResult = await pool.query(countQuery, countParams);
   const total = parseInt(countResult.rows[0].count);
 

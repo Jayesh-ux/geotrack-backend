@@ -890,7 +890,8 @@ export const getTeamLocations = async (req, res) => {
       timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : null,
       activity: row.activity,
       battery: row.battery,
-      isActive: isActive
+      isActive: true, // Android uses this to check if the account is banned/disabled!
+      isOnline: isActive // We can pass the 5-minute online check here
     };
   });
 

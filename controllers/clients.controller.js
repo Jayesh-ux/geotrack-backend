@@ -304,10 +304,16 @@ export const getClients = async (req, res) => {
       SELECT ${CLIENT_SELECT_FIELDS}
   FROM clients
   WHERE company_id = $1
-  AND (created_by IS NULL OR created_by = $2)
     `;
-    const params = [req.companyId, req.user.id]; // ← Added company_id filter
-    let paramCount = 2;
+    const params = [req.companyId]; 
+    
+    // Only filter by created_by for regular agents
+    if (!req.user.isAdmin && !req.isSuperAdmin) {
+      query += ` AND (created_by IS NULL OR created_by = $2)`;
+      params.push(req.user.id);
+    }
+    
+    let paramCount = params.length;
 
     if (search && search.trim()) {
       paramCount++;
@@ -346,9 +352,16 @@ export const getClients = async (req, res) => {
     const result = await pool.query(query, params);
 
     // Count query
-    let countQuery = "SELECT COUNT(*) FROM clients WHERE company_id = $1 AND (created_by IS NULL OR created_by = $2)";
-    const countParams = [req.companyId, req.user.id]; // ← Added company_id filter
-    let countParamIndex = 2;
+    let countQuery = "SELECT COUNT(*) FROM clients WHERE company_id = $1";
+    const countParams = [req.companyId]; 
+    
+    // Only filter by created_by for regular agents
+    if (!req.user.isAdmin && !req.isSuperAdmin) {
+      countQuery += ` AND (created_by IS NULL OR created_by = $2)`;
+      countParams.push(req.user.id);
+    }
+    
+    let countParamIndex = countParams.length;
 
     if (search && search.trim()) {
       countParamIndex++;

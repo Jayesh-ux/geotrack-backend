@@ -217,12 +217,27 @@ export const createExpense = async (req, res) => {
 // ============================================
 
 export const getMyExpenses = async (req, res) => {
-  const { startDate, endDate, transportMode, clientId } = req.query;
+  const { startDate, endDate, transportMode, clientId, userId } = req.query;
 
-  // ✅ Add company_id filter
-  let query = `SELECT * FROM trip_expenses WHERE user_id = $1 AND company_id = $2`;
-  const params = [req.user.id, req.companyId];
-  let count = 2;
+  let query;
+  let params;
+  let count;
+
+  if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
+    // Admin fetching all company expenses
+    query = `SELECT * FROM trip_expenses WHERE company_id = $1`;
+    params = [req.companyId];
+    count = 1;
+  } else {
+    // Single user expenses (default or specific ID)
+    let queryId = req.user.id;
+    if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
+      queryId = userId;
+    }
+    query = `SELECT * FROM trip_expenses WHERE user_id = $1 AND company_id = $2`;
+    params = [queryId, req.companyId];
+    count = 2;
+  }
 
   if (startDate) {
     count++;

@@ -85,15 +85,26 @@ export const getLocationLogs = async (req, res) => {
   const { startDate, endDate, page = 1, limit = 50, userId } = req.query;
   const offset = (page - 1) * limit;
 
-  let queryId = req.user.id;
-  if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
-    queryId = userId;
-  }
-
   // ✅ UPDATED: Add company_id filter (skip for super admin)
-  let query = "SELECT * FROM location_logs WHERE user_id = $1";
-  const params = [queryId];
-  let paramCount = 1;
+  let query;
+  let params;
+  let paramCount;
+
+  if (userId === "all" && (req.user.isAdmin || req.isSuperAdmin)) {
+    // Admin fetching logs for the entire company
+    query = "SELECT * FROM location_logs WHERE 1=1";
+    params = [];
+    paramCount = 0;
+  } else {
+    // Single user logs
+    let queryId = req.user.id;
+    if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
+      queryId = userId;
+    }
+    query = "SELECT * FROM location_logs WHERE user_id = $1";
+    params = [queryId];
+    paramCount = 1;
+  }
 
   if (!req.isSuperAdmin && req.companyId) {
     paramCount++;

@@ -1,20 +1,24 @@
-import pool from './db.js';
+import pkg from 'pg';
+const { Pool } = pkg;
+
+const pool = new Pool({
+  connectionString: "postgresql://geotrackdb_user:gDBJB8LnmVT6UrIwKwv7uI13LH9BPMGp@dpg-d4rqmoc9c44c738du6dg-a.singapore-postgres.render.com/geotrackdb",
+  ssl: { rejectUnauthorized: false }
+});
 
 async function checkSchema() {
-    const result = await pool.query(`
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
-        WHERE table_name = 'users' 
-        ORDER BY ordinal_position
+  try {
+    const res = await pool.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'payments'
     `);
-    console.log('--- users table columns ---');
-    result.rows.forEach(r => console.log(r.column_name, '-', r.data_type));
-    
-    const agentSample = await pool.query(`SELECT id, email, is_admin, is_super_admin FROM users LIMIT 3`);
-    console.log('\n--- Sample users ---');
-    console.log(agentSample.rows);
-    
-    process.exit(0);
+    console.log("payments columns:", res.rows);
+  } catch(e) {
+    console.error("Error:", e);
+  } finally {
+    await pool.end();
+  }
 }
 
 checkSchema();
