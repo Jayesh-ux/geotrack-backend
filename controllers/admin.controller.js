@@ -237,6 +237,38 @@ export const getAnalytics = async (req, res) => {
   });
 };
 
+export const getDashboardStats = async (req, res) => {
+  const companyFilter = req.isSuperAdmin ? '' : 'AND company_id = $1';
+  const params = req.isSuperAdmin ? [] : [req.companyId];
+
+  try {
+    const statsQuery = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM users WHERE is_admin = false ${companyFilter}) as total_agents,
+        (SELECT COUNT(*) FROM users WHERE is_admin = false AND last_seen > NOW() - INTERVAL '15 minutes' ${companyFilter}) as active_agents,
+        (SELECT COUNT(*) FROM clients WHERE 1=1 ${companyFilter}) as total_clients,
+        (SELECT COUNT(*) FROM clients WHERE latitude IS NOT NULL AND longitude IS NOT NULL ${companyFilter}) as gps_verified,
+        (SELECT COUNT(DISTINCT client_id) FROM meetings WHERE 1=1 ${companyFilter}) as visited_clients
+    `, params);
+
+    const { active_agents, total_clients, gps_verified, visited_clients } = statsQuery.rows[0];
+    
+    const total = parseInt(total_clients);
+    const gpsVerifiedPercent = total > 0 ? Math.round((parseInt(gps_verified) / total) * 100) : 0;
+    const coveragePercent = total > 0 ? Math.round((parseInt(visited_clients) / total) * 100) : 0;
+
+    res.json({
+      activeAgents: parseInt(active_agents),
+      totalClients: total,
+      gpsVerified: gpsVerifiedPercent,
+      coverage: coveragePercent
+    });
+  } catch (err) {
+    console.error("❌ Error fetching dashboard stats:", err);
+    res.status(500).json({ error: "InternalServerError" });
+  }
+};
+
 export const getUserLocationLogs = async (req, res) => {
   const { page = 1, limit = 200 } = req.query;
   const offset = (page - 1) * limit;
@@ -805,4 +837,70 @@ export const resetUserPassword = async (req, res) => {
 
   console.log(`🔑 Admin reset password for user: ${userCheck.rows[0].email}`);
   res.json({ message: "PasswordReset", email: userCheck.rows[0].email });
+};
+
+// ============================================
+// TEAM LOCATIONS (For Android Map)
+// ============================================
+export const getTeamLocations = async (req, res) => {
+  // Get all users in the admin's company with their latest location
+  const locationQuery = `
+    SELECT 
+      u.id, 
+      u.email, 
+      p.full_name as "fullName",
+      u.battery_percentage as battery,
+      u.current_activity as activity,
+      u.last_seen as timestamp,
+      l.latitude,
+      l.longitude,
+      l.accuracy
+    FROM users u
+    LEFT JOIN profiles p ON p.user_id = u.id
+    LEFT JOIN LATERAL (
+      SELECT latitude, longitude, accuracy 
+      FROM location_logs 
+      WHERE user_id = u.id 
+      ORDER BY timestamp DESC LIMIT 1
+    ) l ON true
+    WHERE u.is_admin = false
+    ${req.isSuperAdmin ? "" : "AND u.company_id = $1"}
+  `;
+  const locationParams = req.isSuperAdmin ? [] : [req.companyId];
+  
+  const locResult = await pool.query(locationQuery, locationParams);
+
+  const agents = locResult.rows.map(row => {
+    let isActive = false;
+    if (row.timestamp) {
+      const lastSeen = new Date(row.timestamp);
+      const now = new Date();
+      if ((now - lastSeen) / (1000 * 60) <= 5) {
+        isActive = true;
+      }
+    }
+
+    return {
+      id: row.id,
+      email: row.email,
+      fullName: row.fullName,
+      latitude: row.latitude ? parseFloat(row.latitude) : null,
+      longitude: row.longitude ? parseFloat(row.longitude) : null,
+      accuracy: row.accuracy ? parseFloat(row.accuracy) : null,
+      timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : null,
+      activity: row.activity,
+      battery: row.battery,
+      isActive: isActive
+    };
+  });
+
+  console.log(`✅ Admin fetched team locations for ${agents.length} agents`);
+  res.json({ agents });
+};
+
+// ============================================
+// CLIENT SERVICES (For Android Admin Panel)
+// ============================================
+export const getClientServices = async (req, res) => {
+  res.json({ services: [] }); // Placeholder for now so the app doesn't crash on 404
 };

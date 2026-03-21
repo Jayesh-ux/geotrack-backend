@@ -1,6 +1,3 @@
-// routes/location.routes.js
-// FINAL VERSION: With plan limitations + trial user restrictions
-
 import express from "express";
 import { authenticateToken } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
@@ -42,4 +39,13 @@ router.get("/clock-in",
   asyncHandler(locationController.getClockIn)
 );
 
-export default router;
+// ============================================
+// GET DAILY SUMMARY (distance + meetings + expenses in one call)
+// ============================================
+router.get("/daily-summary",
+  authenticateToken,
+  enforceTrialUserLimits,
+  asyncHandler(locationController.getDailySummary)
+);
+
+export default router;

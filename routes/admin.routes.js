@@ -13,12 +13,15 @@ router.use(authenticateToken, attachCompanyContext, requireAdmin);
 router.get("/clients", asyncHandler(adminController.getAllClients));
 router.get("/users", asyncHandler(adminController.getAllUsers));
 router.get("/analytics", asyncHandler(adminController.getAnalytics));
+router.get("/stats", asyncHandler(adminController.getDashboardStats));
 router.get("/location-logs/:userId", asyncHandler(adminController.getUserLocationLogs));
 router.get("/clock-status/:userId", asyncHandler(adminController.getClockStatus));
 router.get("/expenses/summary", asyncHandler(adminController.getExpensesSummary));
 router.get("/user-meetings/:userId", asyncHandler(adminController.getUserMeetings));
 router.get("/user-expenses/:userId", asyncHandler(adminController.getUserExpenses));
 router.get("/check", asyncHandler(adminController.checkAdminStatus));
+router.get("/team-locations", asyncHandler(adminController.getTeamLocations)); // NEW ROUTE FOR ANDROID MAP
+router.get("/client-services", asyncHandler(adminController.getClientServices)); // Missing route
 
 // NEW USER MANAGEMENT ROUTES
 router.post("/users", asyncHandler(adminController.createUser));

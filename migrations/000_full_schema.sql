@@ -198,6 +198,7 @@ DROP TABLE IF EXISTS "pincodes" CASCADE;
 CREATE TABLE "pincodes" (
   "id" SERIAL PRIMARY KEY,
   "pincode" VARCHAR(20) UNIQUE NOT NULL,
+  "postal_code" VARCHAR(20),
   "latitude" double precision NOT NULL,
   "longitude" double precision NOT NULL,
   "city" VARCHAR(100),
@@ -251,7 +252,8 @@ CREATE TABLE IF NOT EXISTS "trip_expenses" (
   "payment_status" VARCHAR(50) DEFAULT 'PENDING',
   "payment_initiated_at" TIMESTAMP,
   "payment_completed_at" TIMESTAMP,
-  "paid_amount" numeric DEFAULT 0
+  "paid_amount" numeric DEFAULT 0,
+  "is_paid" BOOLEAN DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS "quota_drift_log" (
@@ -325,7 +327,8 @@ CREATE TABLE IF NOT EXISTS "companies" (
   "tally_auto_sync_enabled" boolean DEFAULT false,
   "tally_sync_interval_minutes" integer DEFAULT 30,
   "total_paid_amount" numeric DEFAULT 0,
-  "total_pending_amount" numeric DEFAULT 0
+  "total_pending_amount" numeric DEFAULT 0,
+  "user_limit" INTEGER DEFAULT 10
 );
 
 CREATE TABLE IF NOT EXISTS "plan_features" (
