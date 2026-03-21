@@ -416,6 +416,7 @@ export const getClients = async (req, res) => {
       adminCountQuery = "SELECT COUNT(*) FROM clients";
       adminCountParams = [];
     } else {
+      const companyId = req.companyId || req.user.companyId;
       // Regular Admin: filter by company
       adminQuery = `
         SELECT ${CLIENT_SELECT_FIELDS}
@@ -424,9 +425,9 @@ export const getClients = async (req, res) => {
         ORDER BY last_visit_date DESC NULLS LAST, created_at DESC
         LIMIT $2 OFFSET $3
       `;
-      adminParams = [req.companyId, parseInt(limit), parseInt(offset)];
+      adminParams = [companyId, parseInt(limit), parseInt(offset)];
       adminCountQuery = "SELECT COUNT(*) FROM clients WHERE company_id = $1";
-      adminCountParams = [req.companyId];
+      adminCountParams = [companyId];
     }
     
     const adminResult = await pool.query(adminQuery, adminParams);
