@@ -197,4 +197,9 @@ app.listen(PORT, () => {
   console.log(`📍 Pincode-based filtering enabled`);
   console.log(`💎 Plan-based limitations enabled`);  // ← NEW
   console.log(`📦 Request body limit: 10mb`);
-});
+  
+  // ============================================
+  // AUTO-GEOCODE TRIGGER
+  // ============================================
+  startBackgroundGeocode();
+});
