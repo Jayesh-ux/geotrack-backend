@@ -186,6 +186,57 @@ app.get("/dbtest", async (req, res) => {
   }
 });
 
+// ============================================
+// EMERGENCY DB SYNC (Added to fix login crash)
+// ============================================
+app.get("/db-sync", async (req, res) => {
+  console.log("🛠️ Starting Emergency DB Sync...");
+  try {
+    // 1. Users table column updates
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true');
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trial_user BOOLEAN DEFAULT false');
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ');
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS battery_percentage INTEGER');
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS current_activity VARCHAR(50)');
+    await pool.query('UPDATE users SET is_active = true WHERE is_active IS NULL');
+    console.log("✅ Users table synced");
+
+    // 2. Companies table column updates
+    await pool.query('ALTER TABLE companies ADD COLUMN IF NOT EXISTS email_domain VARCHAR(255)');
+    await pool.query('ALTER TABLE companies ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true');
+    console.log("✅ Companies table synced");
+
+    // 3. Ensure trial_devices exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS trial_devices (
+        id uuid NOT NULL DEFAULT gen_random_uuid(),
+        device_id VARCHAR(255) NOT NULL UNIQUE,
+        user_id uuid,
+        trial_start TIMESTAMPTZ DEFAULT now(),
+        last_login TIMESTAMPTZ DEFAULT now(),
+        accounts_created integer DEFAULT 0,
+        is_blocked boolean DEFAULT false,
+        PRIMARY KEY (id)
+      )
+    `);
+    console.log("✅ Trial Devices table synced");
+
+    // 4. Ensure sessions have company_id
+    await pool.query('ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS company_id uuid');
+    console.log("✅ User Sessions table synced");
+
+    res.json({ 
+      success: true, 
+      message: "Database schema synchronized successfully",
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error("❌ Sync Failed:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 // Error handling
 app.use(errorHandler);
