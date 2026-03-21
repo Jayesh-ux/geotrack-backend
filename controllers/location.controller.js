@@ -92,7 +92,7 @@ export const getLocationLogs = async (req, res) => {
 
   if (userId === "all" && (req.user.isAdmin || req.isSuperAdmin)) {
     // Admin fetching logs for the entire company
-    query = "SELECT * FROM location_logs WHERE 1=1";
+    query = "SELECT l.*, u.email FROM location_logs l JOIN users u ON l.user_id = u.id WHERE 1=1";
     params = [];
     paramCount = 0;
   } else {
@@ -101,32 +101,32 @@ export const getLocationLogs = async (req, res) => {
     if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
       queryId = userId;
     }
-    query = "SELECT * FROM location_logs WHERE user_id = $1";
+    query = "SELECT l.*, u.email FROM location_logs l JOIN users u ON l.user_id = u.id WHERE l.user_id = $1";
     params = [queryId];
     paramCount = 1;
   }
 
   if (!req.isSuperAdmin && req.companyId) {
     paramCount++;
-    query += ` AND company_id = $${paramCount}`;
+    query += ` AND l.company_id = $${paramCount}`;
     params.push(req.companyId);
   }
 
   if (startDate) {
     paramCount++;
-    query += ` AND timestamp >= $${paramCount}`;
+    query += ` AND l.timestamp >= $${paramCount}`;
     params.push(startDate);
   }
 
   if (endDate) {
     paramCount++;
-    query += ` AND timestamp <= $${paramCount}`;
+    query += ` AND l.timestamp <= $${paramCount}`;
     // If it's just "YYYY-MM-DD", make it end of day to include all logs
     const parsedEndDate = endDate.includes('T') ? endDate : `${endDate} 23:59:59.999`;
     params.push(parsedEndDate);
   }
 
-  query += ` ORDER BY timestamp DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+  query += ` ORDER BY l.timestamp DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
   params.push(parseInt(limit), parseInt(offset));
 
   const result = await pool.query(query, params);
@@ -134,6 +134,7 @@ export const getLocationLogs = async (req, res) => {
   const mappedLogs = result.rows.map(log => ({
     id: log.id,
     userId: log.user_id,
+    email: log.email, // Added for admin clarity
     latitude: log.latitude,
     longitude: log.longitude,
     accuracy: log.accuracy,

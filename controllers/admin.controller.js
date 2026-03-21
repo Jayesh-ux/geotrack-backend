@@ -865,6 +865,7 @@ export const getTeamLocations = async (req, res) => {
     ) l ON true
     WHERE u.is_admin = false
     ${req.isSuperAdmin ? "" : "AND u.company_id = $1"}
+    ORDER BY u.last_seen DESC NULLS LAST
   `;
   const locationParams = req.isSuperAdmin ? [] : [req.companyId];
   

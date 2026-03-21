@@ -465,14 +465,13 @@ export const getClients = async (req, res) => {
       SELECT ${CLIENT_SELECT_FIELDS}
       FROM clients
       WHERE company_id = $1
-      AND (created_by IS NULL OR created_by = $2)
       ORDER BY last_visit_date DESC NULLS LAST, created_at DESC
-      LIMIT $3 OFFSET $4
+      LIMIT $2 OFFSET $3
     `;
-    const fallbackResult = await pool.query(fallbackQuery, [req.companyId, req.user.id, parseInt(limit), parseInt(offset)]);
+    const fallbackResult = await pool.query(fallbackQuery, [req.companyId, parseInt(limit), parseInt(offset)]);
     const fallbackCount = parseInt((await pool.query(
-      "SELECT COUNT(*) FROM clients WHERE company_id = $1 AND (created_by IS NULL OR created_by = $2)",
-      [req.companyId, req.user.id]
+      "SELECT COUNT(*) FROM clients WHERE company_id = $1",
+      [req.companyId]
     )).rows[0].count);
     return res.json({
       clients: fallbackResult.rows,
