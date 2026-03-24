@@ -5,12 +5,7 @@
 -- Author: GeoTrack Engineering
 -- ============================================================
 
--- STEP 1: Enable spatial math extensions (no PostGIS license needed!)
--- These are built-in to standard PostgreSQL.
-CREATE EXTENSION IF NOT EXISTS cube;
-CREATE EXTENSION IF NOT EXISTS earthdistance;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- STEP 1: Spatial math extensions are now in 000_full_schema.sql
 
 -- STEP 4.5: Add proximity columns to meetings table (if not in main schema)
 ALTER TABLE meetings 

@@ -14,7 +14,9 @@ async function run() {
 
         console.log(`📦 Found ${files.length} migration files.`);
 
+        let currentFile;
         for (const file of files) {
+            currentFile = file;
             console.log(`🛠️  Running migration: ${file}...`);
             const sql = readFileSync(resolve(migrationsDir, file), "utf8");
             
@@ -25,13 +27,16 @@ async function run() {
 
         console.log("\n✨ All migrations completed successfully!");
     } catch (err) {
+        console.error("\n❌ MIGRATION ERROR DETAILS:");
+        console.error("   File:", currentFile || "Unknown");
+        console.error("   Message:", err?.message || err);
+        
         if (err?.message?.includes("permission denied")) {
-            console.error("\n❌ Permission Denied: You must be a PostgreSQL superuser to enable PostGIS extensions.");
-            console.error("💡 On Render, this is usually handled automatically if the extension is pre-installed.");
-        } else {
-            console.error("\n❌ Migration failed:", err?.message || err);
+            console.error("   💡 Hint: Render Free Tier usually allows basic extensions like 'cube' and 'earthdistance'.");
+            console.error("      If this is a superuser error, ensure the extensions are pre-installed or try removing them from SQL.");
         }
-        console.error("🚨 Continuing anyway so the server can start! Check your Render DB logs.");
+        
+        console.error("\n🚨 SERVER CONTINUING: The server will attempt to start anyway for debugging.");
         // We explicitly DO NOT process.exit(1) here so the server can boot and we can debug.
     } finally {
         // Only end the pool if we actually connect
