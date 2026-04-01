@@ -9,8 +9,9 @@ export const CORS_ORIGIN = [
   "http://localhost:3000", 
   "https://geo-track-em3s.onrender.com",
   "https://dashboard-tsw3.onrender.com",
-  "https://lisence-system.onrender.com"
-];
+  "https://lisence-system.onrender.com",
+  process.env.FRONTEND_URL
+].filter(Boolean);
 
 // 🆕 EMAIL CONFIGURATION
 export const EMAIL_CONFIG = {

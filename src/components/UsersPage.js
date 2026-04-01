@@ -58,6 +58,7 @@ const UsersPage = ({
   onViewLogs,
   onViewMeetings,
   onViewExpenses,
+  onViewJourney,
 }) => {
   const totalExpenses = Object.values(userExpenses).reduce((sum, val) => sum + (val || 0), 0);
   const clockedInCount = Object.values(userClockIns).filter((c) => c?.clocked_in).length;
@@ -115,6 +116,20 @@ const UsersPage = ({
             const userExpense = userExpenses[user.id] || 0;
             const meetings = userMeetings[user.id] || { total: 0, completed: 0, inProgress: 0 };
 
+            let status = "offline";
+            if (lastSeen) {
+              const diffMinutes = (Date.now() - new Date(lastSeen)) / 60000;
+              if (isOnline && diffMinutes <= 5) status = "online";
+              else if (diffMinutes <= 30) status = "idle";
+            }
+
+            const STATUS_CONFIG = {
+              online: { color: "#22c55e", label: "Online", dot: "#22c55e" },
+              idle: { color: "#f59e0b", label: "Idle", dot: "#f59e0b" },
+              offline: { color: "#94a3b8", label: "Offline", dot: "#94a3b8" }
+            };
+            const cfg = STATUS_CONFIG[status];
+
             return (
               <NeumorphicCard key={user.id} className="hover:shadow-xl transition-all duration-300">
                 {/* Header with Status */}
@@ -160,24 +175,32 @@ const UsersPage = ({
                 </div>
 
                 {/* Status */}
-                <div className="mb-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#94a3b8' }}>Status</p>
-                  {lastSeen ? (
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#94a3b8' }}>Status</p>
                     <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                       <div style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.dot, boxShadow: `0 0 6px ${cfg.dot}` }} />
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold" style={{ color: '#1e293b' }}>Active</p>
-                        <p className="text-xs truncate" style={{ color: '#64748b' }}>
-                          {new Date(lastSeen).toLocaleTimeString()}
-                        </p>
+                        <p className="text-sm font-semibold" style={{ color: '#1e293b' }}>{cfg.label}</p>
+                        {lastSeen && (
+                          <p className="text-xs truncate" style={{ color: '#64748b' }}>
+                            Last seen: {new Date(lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <XCircle className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                      <p className="text-sm" style={{ color: '#64748b' }}>Not clocked in</p>
-                    </div>
-                  )}
+                  </div>
+                  <button
+                    onClick={() => onViewJourney(user)}
+                    className="px-3 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
+                    style={{
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: '#ffffff',
+                      boxShadow: '3px 3px 6px rgba(102,126,234,0.4)',
+                    }}
+                  >
+                    View Journey
+                  </button>
                 </div>
 
                 {/* Metrics */}

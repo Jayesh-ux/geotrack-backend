@@ -15,6 +15,8 @@ import ClientServicesModal from './ClientServicesModal';
 import CompanyManagementPage from './CompanyManagementPage';
 import BillingPlansPage from './BillingPlansPage';
 import BillingHistoryPage from './BillingHistoryPage';
+import LiveMapPage from './LiveMapPage';
+import JourneyPage from './JourneyPage';
 
 const API_BASE_URL = "https://geo-track-1.onrender.com";
 
@@ -429,8 +431,14 @@ const [billingOpen, setBillingOpen] = useState(false);
     setSelectedClientForServices(client);
   };
 
+  const handleViewJourney = (user) => {
+    setSelectedUser(user);
+    setCurrentPage("journey");
+  };
+
   const navItems = [
     { id: "analytics", label: "Dashboard", icon: Home },
+    { id: "liveMap", label: "Live Map", icon: MapPin },
     { id: "clients", label: "Clients", icon: FileText },
     { id: "clientServices", label: "Client Services", icon: Package },
     { id: "users", label: "Team Activity", icon: Users },
@@ -597,6 +605,8 @@ const [billingOpen, setBillingOpen] = useState(false);
           <div>
             <h1 className="text-2xl font-bold mb-1" style={{ color: '#1e293b' }}>
               {currentPage === "analytics" && "Dashboard Overview"}
+              {currentPage === "liveMap" && "Live Team Map"}
+              {currentPage === "journey" && "Agent Journey"}
               {currentPage === "clients" && "Client Management"}
               {currentPage === "clientServices" && "Client Services"}
               {currentPage === "companyManagement" && "Company Management"}
@@ -610,6 +620,8 @@ const [billingOpen, setBillingOpen] = useState(false);
             </h1>
             <p style={{ color: '#64748b' }}>
               {currentPage === "analytics" && "Monitor your business performance"}
+              {currentPage === "liveMap" && "Real-time location of field agents"}
+              {currentPage === "journey" && "Detailed timeline of agent activity"}
               {currentPage === "clients" && "View and manage all your clients"}
               {currentPage === "clientServices" && "Manage all client service subscriptions"}
               {currentPage === "companyManagement" && "Manage company settings and subscriptions"}
@@ -742,6 +754,7 @@ const [billingOpen, setBillingOpen] = useState(false);
             onRefresh={fetchData}
             onGoToClients={() => setCurrentPage("clients")}
             onGoToUsers={() => setCurrentPage("users")}
+            onGoToLiveMap={() => setCurrentPage("liveMap")}
             onSelectUser={(user) => {
               setSelectedUser(user);
               setCurrentPage("users");
@@ -772,7 +785,12 @@ const [billingOpen, setBillingOpen] = useState(false);
             onViewLogs={handleViewUserLogs}
             onViewMeetings={handleViewUserMeetings}
             onViewExpenses={handleViewUserExpenses}
+            onViewJourney={handleViewJourney}
           />
+        ) : currentPage === "liveMap" ? (
+          <LiveMapPage onViewJourney={handleViewJourney} />
+        ) : currentPage === "journey" ? (
+          <JourneyPage selectedUser={selectedUser} onBack={() => setCurrentPage("users")} />
         ) : currentPage === "userManagement" ? (
           <UserManagementPage
             users={users}

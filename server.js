@@ -38,6 +38,7 @@ const app = express();
 
 // IMMEDIATE HEALTH CHECK
 app.get("/ping", (req, res) => res.status(200).send("PONG - Server is alive"));
+app.get("/api/keep-alive", (req, res) => res.status(200).json({ status: "alive", timestamp: new Date() }));
 
 // Middleware
 app.use(cors({

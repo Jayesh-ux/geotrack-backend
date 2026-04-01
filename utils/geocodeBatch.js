@@ -7,7 +7,12 @@ import { GOOGLE_MAPS_API_KEY } from "../config/constants.js";
 
 let isGeocoding = false;
 
-export async function startBackgroundGeocode() {
+export async function startBackgroundGeocode(force = false) {
+  if (force) {
+    console.log("🔄 Force-resetting geocoding flag...");
+    isGeocoding = false;
+  }
+
   if (isGeocoding) {
     console.log("⚠️ Geocoding already in progress, skipping...");
     return;
@@ -27,6 +32,14 @@ export async function startBackgroundGeocode() {
     });
   });
 }
+
+// Global safety interval to reset stuck geocoding (every 1 hour)
+setInterval(() => {
+  if (isGeocoding) {
+    console.log("🕒 Safety check: Resetting potentially stuck geocoding flag");
+    isGeocoding = false;
+  }
+}, 60 * 60 * 1000);
 
 async function geocodeClientsInBackground() {
   if (isGeocoding) return;

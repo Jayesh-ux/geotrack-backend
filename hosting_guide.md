@@ -36,14 +36,14 @@ Add the following (values are from our current configuration):
 
 | Key | Value Source / Placeholder | Description |
 |-----|----------------------------|-------------|
-| `JWT_SECRET` | Auto-generated or `your-super-secret-jwt-key-change-me-12345` | Security for authentication. |
-| `GOOGLE_MAPS_API_KEY` | `AIzaSyDTjchZjGA7i1W7thKjDAAtCuxCXo7Xw6U` | Geocoding service key. |
-| `EMAIL_USER` | `geotrack.noreply@gmail.com` | SMTP User. |
-| `EMAIL_PASSWORD` | `inom6413newaccounr7mbb7671` | Gmail App Password (see below). |
-| `EMAIL_FROM` | `newaccounr7@gmail.com` | "From" address for all notifications. |
-| `LICENSE_WEBHOOK_SECRET` | `your-shared-secret-here` | Key for verifying licensing webhooks. |
-| `MIDDLEWARE_TOKEN` | `tally-middleware-secret-key-12345` | Internal security for sync operations. |
-| `FRONTEND_URL` | `https://dashboard.geo-track.org` | Dashboard URL for CORS. |
+| `JWT_SECRET` | Generate a strong random string | Security for authentication. |
+| `GOOGLE_MAPS_API_KEY` | `YOUR_GOOGLE_MAPS_API_KEY_HERE` | Geocoding service key (from Google Cloud Console). |
+| `EMAIL_USER` | `your-noreply@gmail.com` | SMTP User (Gmail account used for sending). |
+| `EMAIL_PASSWORD` | `YOUR_GMAIL_APP_PASSWORD_HERE` | Gmail App Password (see Section 4 below). |
+| `EMAIL_FROM` | `your-from@gmail.com` | "From" address for all notifications. |
+| `LICENSE_WEBHOOK_SECRET` | `YOUR_WEBHOOK_SECRET_HERE` | Key for verifying licensing webhooks. |
+| `MIDDLEWARE_TOKEN` | `YOUR_MIDDLEWARE_TOKEN_HERE` | Internal security for sync operations. |
+| `FRONTEND_URL` | `https://your-dashboard-domain.com` | Dashboard URL for CORS. |
 | `NODE_ENV` | `production` | Deployment mode. |
 
 ---

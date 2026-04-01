@@ -15,6 +15,20 @@ services:
         generateValue: true
       - key: NODE_ENV
         value: production
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: LICENSE_WEBHOOK_SECRET
+        sync: false
+      - key: MIDDLEWARE_TOKEN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
 
 databases:
   - name: geotrack-db

@@ -694,5 +694,18 @@ export const deleteClient = async (req, res) => {
     return res.status(404).json({ error: "ClientNotFound" });
   }
 
+
   res.json({ message: "ClientDeleted" });
 };
+
+export const retryGeocoding = async (req, res) => {
+  try {
+    console.log("🔄 Manual geocoding retry triggered by admin:", req.user.id);
+    startBackgroundGeocode(true);
+    res.json({ status: "OK", message: "Background geocoding started" });
+  } catch (err) {
+    console.error("Error starting background geocoding:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+

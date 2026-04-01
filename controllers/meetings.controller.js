@@ -290,7 +290,11 @@ export const getMeetings = async (req, res) => {
     if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
       queryId = userId;
     }
-    queryBase = `FROM meetings m LEFT JOIN clients c ON m.client_id = c.id WHERE m.user_id = $1 AND m.company_id = $2`;
+    queryBase = `FROM meetings m 
+                 LEFT JOIN clients c ON m.client_id = c.id 
+                 LEFT JOIN users u ON m.user_id = u.id
+                 LEFT JOIN profiles p ON u.id = p.user_id
+                 WHERE m.user_id = $1 AND m.company_id = $2`;
     params = [queryId, companyId];
     paramCount = 2;
   }
@@ -302,17 +306,11 @@ export const getMeetings = async (req, res) => {
       m.client_id as "clientId",
       m.start_time as "startTime",
       m.end_time as "endTime",
-      m.start_latitude as "startLatitude",
-      m.start_longitude as "startLongitude",
-      m.start_accuracy as "startAccuracy",
-      m.end_latitude as "endLatitude",
-      m.end_longitude as "endLongitude",
-      m.end_accuracy as "endAccuracy",
       m.status,
       m.comments,
       m.attachments,
       m.created_at as "createdAt",
-      m.updated_at as "updatedAt",
+      p.full_name as "agentName",
       c.name as "clientName",
       c.address as "clientAddress"
     ${queryBase}

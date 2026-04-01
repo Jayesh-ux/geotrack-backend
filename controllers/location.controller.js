@@ -15,11 +15,19 @@ export const createLocationLog = async (req, res) => {
     return res.status(400).json({ error: "LocationRequired" });
   }
 
-  console.log(`📍 Logging location for user ${req.user.id}: ${latitude}, ${longitude}`);
+  // ✅ OPTIMIZED: Remove mandatory per-log geocoding to save costs/performance
+  // Pincode is only fetched for specific activities if needed
+  let pincode = null;
+  const eventsNeedingGeocode = ["CLOCK_IN", "CLOCK_OUT", "MEETING_START", "MEETING_END"];
+  
+  if (eventsNeedingGeocode.includes(finalActivity)) {
+    try {
+      pincode = await getPincodeFromCoordinates(latitude, longitude);
+    } catch (e) {
+      console.warn("Geocoding failed, continuing without pincode");
+    }
+  }
 
-  const pincode = await getPincodeFromCoordinates(latitude, longitude);
-
-  // ✅ UPDATED: Include company_id in INSERT
   const result = await pool.query(
     `INSERT INTO location_logs (user_id, latitude, longitude, accuracy, activity, notes, pincode, battery, company_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -92,7 +100,11 @@ export const getLocationLogs = async (req, res) => {
 
   if (userId === "all" && (req.user.isAdmin || req.isSuperAdmin)) {
     // Admin fetching logs for the entire company
-    query = "SELECT l.*, u.email FROM location_logs l JOIN users u ON l.user_id = u.id WHERE 1=1";
+    query = `SELECT l.*, u.email, p.full_name as "agentName" 
+             FROM location_logs l 
+             JOIN users u ON l.user_id = u.id 
+             LEFT JOIN profiles p ON u.id = p.user_id
+             WHERE 1=1`;
     params = [];
     paramCount = 0;
   } else {
@@ -101,7 +113,11 @@ export const getLocationLogs = async (req, res) => {
     if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
       queryId = userId;
     }
-    query = "SELECT l.*, u.email FROM location_logs l JOIN users u ON l.user_id = u.id WHERE l.user_id = $1";
+    query = `SELECT l.*, u.email, p.full_name as "agentName" 
+             FROM location_logs l 
+             JOIN users u ON l.user_id = u.id 
+             LEFT JOIN profiles p ON u.id = p.user_id
+             WHERE l.user_id = $1`;
     params = [queryId];
     paramCount = 1;
   }
@@ -134,7 +150,8 @@ export const getLocationLogs = async (req, res) => {
   const mappedLogs = result.rows.map(log => ({
     id: log.id,
     userId: log.user_id,
-    email: log.email, // Added for admin clarity
+    email: log.email,
+    agentName: log.agentName, // Added for admin clarity
     latitude: log.latitude,
     longitude: log.longitude,
     accuracy: log.accuracy,

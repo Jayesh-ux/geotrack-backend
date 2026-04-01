@@ -117,6 +117,16 @@ router.get("/search/advanced",
   })
 );
 
+
+// ============================================
+// RETRY GEOCODING (Admin Only)
+// ============================================
+router.post("/retry-geocoding",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(clientsController.retryGeocoding)
+);
+
 // ============================================
 // BULK OPERATIONS (Feature-Gated)
 // ============================================

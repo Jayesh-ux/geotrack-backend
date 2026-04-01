@@ -21,13 +21,23 @@ router.get("/user-meetings/:userId", asyncHandler(adminController.getUserMeeting
 router.get("/user-expenses/:userId", asyncHandler(adminController.getUserExpenses));
 router.get("/check", asyncHandler(adminController.checkAdminStatus));
 router.get("/team-locations", asyncHandler(adminController.getTeamLocations)); // NEW ROUTE FOR ANDROID MAP
+router.get("/agents/live", asyncHandler(adminController.getLiveAgents)); // ✅ Android App Live Map
+router.get("/daily-summary", asyncHandler(adminController.getAdminDailySummary)); // ✅ Android App Admin Dashboard
 router.get("/client-services", asyncHandler(adminController.getClientServices)); // Missing route
 
 // NEW USER MANAGEMENT ROUTES
 router.post("/users", asyncHandler(adminController.createUser));
 router.get("/users/:userId", asyncHandler(adminController.getUserDetails));
 router.put("/users/:userId", asyncHandler(adminController.updateUser));
+router.patch("/users/:userId/status", asyncHandler(adminController.updateUser)); // ✅ Android App updateUserStatus
 router.delete("/users/:userId", asyncHandler(adminController.deleteUser));
 router.post("/users/:userId/reset-password", asyncHandler(adminController.resetUserPassword));
+
+// ✅ UNIFIED JOURNEY REPORT
+router.get("/users/:userId/unified-journey", asyncHandler(adminController.getUnifiedJourney));
+router.get("/journey/:userId/:date", async (req, res, next) => {
+    req.query.date = req.params.date; // Map path param to query param expected by getUnifiedJourney
+    return adminController.getUnifiedJourney(req, res, next);
+});
 
 export default router;

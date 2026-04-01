@@ -109,6 +109,7 @@ const AnalyticsPage = ({
   onRefresh,
   onGoToClients,
   onGoToUsers,
+  onGoToLiveMap,
   onSelectUser,
 }) => {
 
@@ -183,6 +184,49 @@ const prevMonth = trends?.[trends.length - 2]?.clients ?? 0;
 
   return (
   <div className="space-y-5">
+    {/* Live Activity & Map Strip */}
+    <div style={{ display: "flex", gap: "16px", marginBottom: "8px" }}>
+      <NeumorphicCard className="flex-1" style={{ padding: "16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
+          <div>
+            <p style={{ fontSize: "11px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 4px" }}>Active Team</p>
+            <p style={{ fontSize: "20px", fontWeight: 800, color: "#1e293b", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4facfe", boxShadow: "0 0 8px #4facfe" }}></span>
+              {stats.totalUsers} <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>Agents</span>
+            </p>
+          </div>
+          <div style={{ width: "1px", height: "30px", background: "rgba(0,0,0,0.05)" }}></div>
+          <div>
+            <p style={{ fontSize: "11px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 4px" }}>GPS Coverage</p>
+            <p style={{ fontSize: "20px", fontWeight: 800, color: "#1e293b", margin: 0 }}>
+              {stats.coordinatesCoverage}%
+            </p>
+          </div>
+          <div style={{ width: "1px", height: "30px", background: "rgba(0,0,0,0.05)" }}></div>
+          <div>
+            <p style={{ fontSize: "11px", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1px", margin: "0 0 4px" }}>Avg Tracking Logs</p>
+            <p style={{ fontSize: "20px", fontWeight: 800, color: "#1e293b", margin: 0 }}>
+              {(stats.totalLogs / (stats.totalUsers || 1)).toFixed(0)} <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>/ user</span>
+            </p>
+          </div>
+        </div>
+
+        <button 
+          onClick={onGoToLiveMap}
+          className="hover:scale-105 transition-transform"
+          style={{ 
+            background: "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)", 
+            border: "none", borderRadius: "12px", padding: "12px 24px", 
+            color: "#1e293b", fontWeight: 700, fontSize: "14px", cursor: "pointer", 
+            display: "flex", alignItems: "center", gap: "8px",
+            boxShadow: "4px 4px 12px rgba(67, 233, 123, 0.4)" 
+          }}
+        >
+          <MapPin size={18} /> View Live Map
+        </button>
+      </NeumorphicCard>
+    </div>
+
     {/* Plan Usage Widget */}
     <PlanUsageWidget />
 
@@ -444,15 +488,10 @@ const prevMonth = trends?.[trends.length - 2]?.clients ?? 0;
             </p>
 
             <p className="text-sm font-semibold">
-  {user.meetings_held} meetings
-</p>
-<p className="text-xs text-slate-500">
-  {user.clients_created} clients created
-</p>
-
-
-            <p className="text-xs" style={{ color: "#64748b" }}>
-              clients
+              {user.meetings_held} meetings
+            </p>
+            <p className="text-xs text-slate-500">
+              {user.clients_created} clients created
             </p>
           </div>
         ))}
