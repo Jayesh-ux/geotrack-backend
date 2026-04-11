@@ -381,21 +381,25 @@ export const getClients = async (req, res) => {
   // ✅ UPDATED: Add company filter to all queries
   if (searchMode === 'remote') {
     const isSuperAdmin = req.isSuperAdmin || req.user?.isSuperAdmin;
-    const companyId = req.companyId || req.user?.companyId;
 
-    console.log(`🌐 Remote search mode | Company: ${companyId} | SuperAdmin: ${isSuperAdmin}`);
+    console.log(`🌐 Remote search mode | isSuperAdmin: ${isSuperAdmin} | req.companyId: ${req.companyId}`);
 
     let query = `SELECT ${CLIENT_SELECT_FIELDS} FROM clients WHERE 1=1`;
     const params = [];
     
-    if (companyId) {
-      query += ` AND company_id = $${params.push(companyId)}`;
-    } else if (!isSuperAdmin) {
-      // Regular users MUST have a companyId, but if it leaked through, enforce it here
-      return res.status(403).json({ error: "NoCompanyContext" });
+    // ✅ FIX: Don't apply company filter for SuperAdmin
+    if (!isSuperAdmin) {
+      const companyId = req.companyId || req.user?.companyId;
+
+      if (companyId) {
+        query += ` AND company_id = $${params.push(companyId)}`;
+      } else {
+        return res.status(403).json({ error: "NoCompanyContext" });
+      }
     }
+    // SuperAdmin sees ALL clients - no company filter applied
     
-    // Only filter by created_by for regular agents
+    // Only filter by created_by for regular agents (non-admin, non-superadmin)
     if (!req.user.isAdmin && !isSuperAdmin) {
       query += ` AND (created_by IS NULL OR created_by = $${params.push(req.user.id)})`;
     }
@@ -443,8 +447,12 @@ export const getClients = async (req, res) => {
     let countQuery = "SELECT COUNT(*) FROM clients WHERE 1=1";
     const countParams = [];
     
-    if (companyId) {
-      countQuery += ` AND company_id = $${countParams.push(companyId)}`;
+    // ✅ FIX: Don't apply company filter for SuperAdmin in count query
+    if (!isSuperAdmin) {
+      const countCompanyId = req.companyId || req.user?.companyId;
+      if (countCompanyId) {
+        countQuery += ` AND company_id = $${countParams.push(countCompanyId)}`;
+      }
     }
     
     // Only filter by created_by for regular agents

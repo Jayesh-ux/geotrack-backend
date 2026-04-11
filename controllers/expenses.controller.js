@@ -131,6 +131,26 @@ export const createExpense = async (req, res) => {
     const isMultiLeg = Array.isArray(legs) && legs.length > 0;
     console.log(`📊 Multi-leg trip: ${isMultiLeg}, Legs: ${legs?.length || 0}`);
 
+    // ✅ DUPLICATE PREVENTION: Check if same trip exists today (only for non-multi-leg)
+    if (!isMultiLeg) {
+      const existingCheck = await client.query(
+        `SELECT id FROM trip_expenses 
+         WHERE user_id = $1 AND travel_date = $2 AND start_location = $3 
+         AND status IN ('DRAFT', 'IN_PROGRESS', 'COMPLETED')
+         LIMIT 1`,
+        [req.user.id, finalTravelDate, finalStartLocation]
+      );
+      
+      if (existingCheck.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ 
+          error: "DuplicateExpense", 
+          message: "Expense already exists for this trip today. Please resume or update the existing draft.",
+          existingExpenseId: existingCheck.rows[0].id
+        });
+      }
+    }
+
     // Insert main expense record (✅ WITH company_id)
     const expenseResult = await client.query(
       `INSERT INTO trip_expenses
@@ -473,6 +493,14 @@ export const deleteExpense = async (req, res) => {
 // ============================================
 
 export const getMyTotal = async (req, res) => {
+  // Validate role - admins cannot access personal expenses
+  if (req.user.role === 'admin') {
+    return res.status(403).json({ 
+      error: "Forbidden", 
+      message: "Admin users cannot access personal expense data" 
+    });
+  }
+  
   // ✅ Add company_id filter
   const result = await pool.query(
     `SELECT COALESCE(SUM(amount_spent), 0) as total_amount
@@ -487,14 +515,336 @@ export const getMyTotal = async (req, res) => {
 };
 
 export const uploadReceipt = async (req, res) => {
-  const { imageData, fileName } = req.body;
+  const { imageData, fileName, expenseId } = req.body;
 
   if (!imageData) {
     return res.status(400).json({ error: "ImageRequired" });
   }
 
-  res.json({ 
-    imageData: imageData,
-    fileName: fileName 
+  // For now, store as base64 in trip_expenses.receipt_images
+  // TODO: Integrate with cloud storage (S3/Cloudinary) for production
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Generate a simple file URL (in production, this would be cloud storage URL)
+    const fileUrl = `/receipts/${Date.now()}-${fileName || 'receipt.jpg'}`;
+    
+    // If expenseId provided, update the expense record
+    if (expenseId) {
+      await client.query(
+        `UPDATE trip_expenses 
+         SET receipt_images = COALESCE(receipt_images, '{}') || $1,
+             receipt_linked = true
+         WHERE id = $2 AND company_id = $3`,
+        [fileUrl, expenseId, req.companyId]
+      );
+    }
+
+    // Also insert into trip_receipts table for better tracking
+    await client.query(
+      `INSERT INTO trip_receipts 
+       (expense_id, file_url, file_name, uploaded_by, company_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [expenseId || null, fileUrl, fileName || 'receipt.jpg', req.user.id, req.companyId]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      fileUrl: fileUrl,
+      fileName: fileName,
+      expenseId: expenseId,
+      message: "Receipt uploaded successfully"
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error uploading receipt:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+};
+
+// ============================================
+// ACTIVE TRIP APIs (Trip Lifecycle)
+// ============================================
+
+export const startTrip = async (req, res) => {
+  const { expenseId } = req.body;
+  const { agentId } = req.params;
+
+  if (!expenseId) {
+    return res.status(400).json({ error: "ExpenseIdRequired" });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Get current DRAFT trip
+    const expenseResult = await client.query(
+      `SELECT * FROM trip_expenses 
+       WHERE id = $1 AND user_id = $2 AND (status = 'DRAFT' OR status IS NULL)
+       RETURNING *`,
+      [expenseId, agentId]
+    );
+
+    if (expenseResult.rows.length === 0) {
+      return res.status(404).json({ error: "DraftTripNotFound" });
+    }
+
+    const expense = expenseResult.rows[0];
+
+    // Get first leg if multi-leg
+    let legs = [];
+    if (expense.is_multi_leg) {
+      const legsResult = await client.query(
+        `SELECT * FROM trip_legs WHERE expense_id = $1 ORDER BY leg_number`,
+        [expenseId]
+      );
+      legs = legsResult.rows;
+    }
+
+    // Update trip status to IN_PROGRESS
+    await client.query(
+      `UPDATE trip_expenses 
+       SET status = 'IN_PROGRESS', current_leg_index = 0, start_time = NOW() 
+       WHERE id = $1`,
+      [expenseId]
+    );
+
+    // Update first leg status
+    if (legs.length > 0) {
+      await client.query(
+        `UPDATE trip_legs 
+         SET status = 'IN_PROGRESS', started_at = NOW() 
+         WHERE id = $1`,
+        [legs[0].id]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      trip: {
+        id: expense.id,
+        status: 'IN_PROGRESS',
+        currentLegIndex: 0,
+        startLocation: expense.start_location,
+        endLocation: expense.end_location,
+        isMultiLeg: expense.is_multi_leg,
+        legs: legs.map((l, i) => ({
+          ...l,
+          status: i === 0 ? 'IN_PROGRESS' : 'PENDING'
+        }))
+      }
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error starting trip:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+};
+
+export const completeLeg = async (req, res) => {
+  const { expenseId, legId } = req.body;
+  const { agentId } = req.params;
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Get current trip
+    const expenseResult = await client.query(
+      `SELECT * FROM trip_expenses 
+       WHERE id = $1 AND user_id = $2 AND status = 'IN_PROGRESS'
+       RETURNING *`,
+      [expenseId, agentId]
+    );
+
+    if (expenseResult.rows.length === 0) {
+      return res.status(404).json({ error: "ActiveTripNotFound" });
+    }
+
+    const expense = expenseResult.rows[0];
+    const currentLegIndex = expense.current_leg_index || 0;
+
+    // Complete current leg
+    if (legId) {
+      await client.query(
+        `UPDATE trip_legs 
+         SET status = 'COMPLETED', completed_at = NOW() 
+         WHERE id = $1`,
+        [legId]
+      );
+    }
+
+    // Get next leg
+    const nextLegResult = await client.query(
+      `SELECT * FROM trip_legs 
+       WHERE expense_id = $1 AND leg_number = $2
+       RETURNING *`,
+      [expenseId, currentLegIndex + 1]
+    );
+
+    if (nextLegResult.rows.length > 0) {
+      // Start next leg
+      const nextLeg = nextLegResult.rows[0];
+      await client.query(
+        `UPDATE trip_legs 
+         SET status = 'IN_PROGRESS', started_at = NOW() 
+         WHERE id = $1`,
+        [nextLeg.id]
+      );
+
+      await client.query(
+        `UPDATE trip_expenses 
+         SET current_leg_index = $1 
+         WHERE id = $2`,
+        [currentLegIndex + 1, expenseId]
+      );
+    } else {
+      // Trip complete
+      await client.query(
+        `UPDATE trip_expenses 
+         SET status = 'COMPLETED', end_time = NOW() 
+         WHERE id = $1`,
+        [expenseId]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.json({ success: true, message: "Leg completed" });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Error completing leg:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+};
+
+export const getActiveTrip = async (req, res) => {
+  const { agentId } = req.params;
+
+  // Find IN_PROGRESS trip, fall back to DRAFT
+  const expenseResult = await pool.query(
+    `SELECT * FROM trip_expenses 
+     WHERE user_id = $1 AND status = 'IN_PROGRESS'
+     ORDER BY start_time DESC NULLS LAST 
+     LIMIT 1`,
+    [agentId]
+  );
+
+  let expense = expenseResult.rows[0];
+
+  // Fallback to DRAFT if no IN_PROGRESS
+  if (!expense) {
+    const draftResult = await pool.query(
+      `SELECT * FROM trip_expenses 
+       WHERE user_id = $1 AND (status = 'DRAFT' OR status IS NULL)
+       ORDER BY created_at DESC 
+       LIMIT 1`,
+      [agentId]
+    );
+    expense = draftResult.rows[0];
+  }
+
+  if (!expense) {
+    return res.status(404).json({ error: "NoActiveTrip" });
+  }
+
+  // Get legs
+  const legs = expense.is_multi_leg 
+    ? (await pool.query(
+        `SELECT * FROM trip_legs WHERE expense_id = $1 ORDER BY leg_number`,
+        [expense.id]
+      )).rows
+    : [];
+
+  res.json({
+    trip: {
+      id: expense.id,
+      status: expense.status || 'DRAFT',
+      currentLegIndex: expense.current_leg_index || 0,
+      startLocation: expense.start_location,
+      endLocation: expense.end_location,
+      transportMode: expense.transport_mode,
+      isMultiLeg: expense.is_multi_leg,
+      legs: legs,
+      startTime: expense.start_time,
+      endTime: expense.end_time
+    }
   });
+};
+
+// ============================================
+// RECEIPT APIs
+// ============================================
+
+export const getReceipts = async (req, res) => {
+  const { expenseId, legId } = req.query;
+  const companyId = req.companyId;
+
+  let query = `SELECT * FROM trip_receipts WHERE company_id = $1`;
+  const params = [companyId];
+
+  if (expenseId) {
+    params.push(expenseId);
+    query += ` AND expense_id = $${params.length}`;
+  }
+
+  if (legId) {
+    params.push(legId);
+    query += ` AND leg_id = $${params.length}`;
+  }
+
+  query += ` ORDER BY created_at DESC`;
+
+  const result = await pool.query(query, params);
+
+  res.json({
+    receipts: result.rows.map(r => ({
+      id: r.id,
+      expenseId: r.expense_id,
+      legId: r.leg_id,
+      fileUrl: r.file_url,
+      fileName: r.file_name,
+      fileType: r.file_type,
+      fileSize: r.file_size,
+      uploadedBy: r.uploaded_by,
+      createdAt: r.created_at
+    }))
+  });
+};
+
+export const linkReceiptToLeg = async (req, res) => {
+  const { receiptId, legId } = req.body;
+
+  if (!receiptId) {
+    return res.status(400).json({ error: "ReceiptIdRequired" });
+  }
+
+  const result = await pool.query(
+    `UPDATE trip_receipts 
+     SET leg_id = $1 
+     WHERE id = $2 AND company_id = $3 
+     RETURNING *`,
+    [legId || null, receiptId, req.companyId]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: "ReceiptNotFound" });
+  }
+
+  res.json({ success: true, receipt: result.rows[0] });
 };
