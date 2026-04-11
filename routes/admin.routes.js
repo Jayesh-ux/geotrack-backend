@@ -24,6 +24,7 @@ router.get("/team-locations", asyncHandler(adminController.getTeamLocations)); /
 router.get("/agents/live", asyncHandler(adminController.getLiveAgents)); // ✅ Android App Live Map
 router.get("/daily-summary", asyncHandler(adminController.getAdminDailySummary)); // ✅ Android App Admin Dashboard
 router.get("/client-services", asyncHandler(adminController.getClientServices)); // Missing route
+router.post("/self-heal-clients", asyncHandler(adminController.selfHealClients)); // Self-Heal Database
 
 // NEW USER MANAGEMENT ROUTES
 router.post("/users", asyncHandler(adminController.createUser));
@@ -39,5 +40,8 @@ router.get("/journey/:userId/:date", async (req, res, next) => {
     req.query.date = req.params.date; // Map path param to query param expected by getUnifiedJourney
     return adminController.getUnifiedJourney(req, res, next);
 });
+
+router.post("/self-heal-clients", asyncHandler(adminController.selfHealClients));
+router.patch("/clients/:id/location", asyncHandler(adminController.updateClientLocation));
 
 export default router;

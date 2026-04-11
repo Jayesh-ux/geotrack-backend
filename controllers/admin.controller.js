@@ -935,7 +935,8 @@ export const getClientServices = async (req, res) => {
 // ============================================
 export const getUnifiedJourney = async (req, res) => {
   const { userId } = req.params;
-  const { startDate, endDate } = req.query;
+  const { startDate, endDate, page = 1, limit = 500 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
 
   // Verify user belongs to admin's company (unless super admin)
   if (!req.isSuperAdmin) {
@@ -965,7 +966,8 @@ export const getUnifiedJourney = async (req, res) => {
   }
 
   try {
-    // 1. Location logs (sampled to max 2000 points for performance)
+    // 1. Location logs (paginated)
+    const logsLimit = parseInt(limit);
     const logsResult = await pool.query(`
       SELECT id, latitude, longitude, accuracy, activity, battery, notes, pincode, timestamp,
              'location' as event_type
@@ -973,8 +975,8 @@ export const getUnifiedJourney = async (req, res) => {
       WHERE user_id = $1 ${companyFilter}
       ${dateFilter.replace(/timestamp/g, 'timestamp')}
       ORDER BY timestamp ASC
-      LIMIT 2000
-    `, [...baseParams, ...dateParams]);
+      LIMIT $${baseParams.length + dateParams.length + 1} OFFSET $${baseParams.length + dateParams.length + 2}
+    `, [...baseParams, ...dateParams, logsLimit, offset]);
 
     // 2. Meetings (with actual status field)
     let meetingDateFilter = dateFilter.replace(/timestamp/g, 'start_time');
@@ -1027,11 +1029,51 @@ export const getUnifiedJourney = async (req, res) => {
       expensesWithLegs.push(expenseObj);
     }
 
-    // Build unified timeline
+    // Build unified timeline with spam filtering
     const timeline = [];
+    const MIN_DISTANCE_METERS = 200; // Only keep logs >200m apart
+    const MIN_TIME_MINUTES = 5; // Or >5 min apart
+    let lastLocationLog = null;
 
-    // Add location events
+    // Add location events with throttling
     for (const log of logsResult.rows) {
+      // Skip duplicate TRAVELING logs - only keep first in a series
+      if (log.activity === 'TRAVELING' && lastLocationLog && lastLocationLog.activity === 'TRAVELING') {
+        // Check if within 5 min - skip as duplicate
+        const timeDiff = new Date(log.timestamp) - new Date(lastLocationLog.timestamp);
+        if (timeDiff < MIN_TIME_MINUTES * 60 * 1000) {
+          continue; // Skip duplicate TRAVELING log
+        }
+      }
+
+      // Check distance threshold for non-TRAVELING logs
+      if (lastLocationLog && log.activity !== 'TRAVELING') {
+        const lat1 = parseFloat(lastLocationLog.latitude);
+        const lon1 = parseFloat(lastLocationLog.longitude);
+        const lat2 = parseFloat(log.latitude);
+        const lon2 = parseFloat(log.longitude);
+        
+        if (lat1 && lon1 && lat2 && lon2) {
+          // ✅ CORRECT Haversine formula
+          const R = 6371000; // Earth radius in meters
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLon = (lon2 - lon1) * Math.PI / 180;
+          const sinDLat2 = Math.sin(dLat / 2);
+          const sinDLon2 = Math.sin(dLon / 2);
+          const a = sinDLat2 * sinDLat2 + 
+                   Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                   sinDLon2 * sinDLon2;
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distanceMeters = R * c;
+          
+          // Skip if less than 200m from last log AND within 5 min
+          const timeDiff = new Date(log.timestamp) - new Date(lastLocationLog.timestamp);
+          if (distanceMeters < MIN_DISTANCE_METERS && timeDiff < MIN_TIME_MINUTES * 60 * 1000) {
+            continue;
+          }
+        }
+      }
+
       timeline.push({
         type: 'location',
         timestamp: log.timestamp,
@@ -1045,6 +1087,7 @@ export const getUnifiedJourney = async (req, res) => {
           notes: log.notes,
         }
       });
+      lastLocationLog = log;
     }
 
     // Add meeting events (start + end as separate events)
@@ -1113,7 +1156,7 @@ export const getUnifiedJourney = async (req, res) => {
     // Sort timeline by timestamp
     timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    // Calculate summary
+    // Calculate summary (distance in km)
     let totalDistance = 0;
     for (let i = 1; i < logsResult.rows.length; i++) {
       const prev = logsResult.rows[i - 1];
@@ -1121,11 +1164,16 @@ export const getUnifiedJourney = async (req, res) => {
       const lat1 = parseFloat(prev.latitude), lon1 = parseFloat(prev.longitude);
       const lat2 = parseFloat(curr.latitude), lon2 = parseFloat(curr.longitude);
       if (lat1 && lon1 && lat2 && lon2) {
-        const R = 6371;
+        const R = 6371; // km
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-        totalDistance += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const sinDLat2 = Math.sin(dLat / 2);
+        const sinDLon2 = Math.sin(dLon / 2);
+        const a = sinDLat2 * sinDLat2 + 
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                sinDLon2 * sinDLon2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        totalDistance += R * c;
       }
     }
 
@@ -1149,6 +1197,11 @@ export const getUnifiedJourney = async (req, res) => {
       },
       meetings: meetingsResult.rows,
       expenses: expensesWithLegs,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalEvents: timeline.length
+      }
     });
 
   } catch (err) {
@@ -1233,4 +1286,99 @@ export const getLiveAgents = async (req, res) => {
     console.error("❌ Error fetching live agents:", err);
     res.status(500).json({ error: "InternalServerError" });
   }
+};
+
+export const selfHealClients = async (req, res) => {
+  let healedByLogs = 0;
+  let healedByApi = 0;
+  let failed = 0;
+
+  try {
+    const clientsResult = await pool.query(
+      `SELECT id, address FROM clients
+       WHERE latitude IS NULL OR longitude IS NULL`
+    );
+    const clients = clientsResult.rows;
+    const total = clients.length;
+
+    for (const client of clients) {
+      try {
+        const logsResult = await pool.query(
+          `SELECT latitude, longitude
+           FROM location_logs
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+           ORDER BY created_at DESC
+           LIMIT 1`
+        );
+
+        if (logsResult.rows.length > 0) {
+          const log = logsResult.rows[0];
+          await pool.query(
+            `UPDATE clients SET latitude = $1, longitude = $2 WHERE id = $3`,
+            [log.latitude, log.longitude, client.id]
+          );
+          healedByLogs++;
+          continue;
+        }
+
+        if (client.address) {
+          try {
+            const { default: axios } = await import('axios');
+            const geoResponse = await axios.get(
+              `https://maps.googleapis.com/maps/api/geocode/json`,
+              {
+                params: {
+                  address: client.address,
+                  key: process.env.GOOGLE_MAPS_API_KEY
+                },
+                timeout: 5000
+              }
+            );
+
+            if (
+              geoResponse.data.status === 'OK' &&
+              geoResponse.data.results[0]
+            ) {
+              const { lat, lng } =
+                geoResponse.data.results[0].geometry.location;
+              await pool.query(
+                `UPDATE clients SET latitude = $1, longitude = $2 WHERE id = $3`,
+                [lat, lng, client.id]
+              );
+              healedByApi++;
+            } else {
+              failed++;
+            }
+          } catch (apiError) {
+            console.error('Google API error for client', client.id, apiError.message);
+            failed++;
+          }
+        } else {
+          failed++;
+        }
+      } catch (clientError) {
+        console.error('Recovery error for client', client.id, clientError.message);
+        failed++;
+      }
+    }
+
+    res.json({ total, healedByLogs, healedByApi, failed });
+
+  } catch (error) {
+    console.error('Self-heal fatal error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateClientLocation = async (req, res) => {
+  const { id } = req.params;
+  const { latitude, longitude } = req.body;
+  if (!latitude || !longitude) {
+    return res.status(400).json({ error: "latitude and longitude required" });
+  }
+  await pool.query(
+    `UPDATE clients SET latitude = $1, longitude = $2 WHERE id = $3`,
+    [latitude, longitude, id]
+  );
+  res.json({ success: true, id, latitude, longitude });
 };
