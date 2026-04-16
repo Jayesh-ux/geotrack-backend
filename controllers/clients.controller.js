@@ -21,9 +21,11 @@ const CLIENT_SELECT_FIELDS = `
   created_by as "createdBy", 
   created_at as "createdAt", 
   updated_at as "updatedAt",
-  last_visit_date as "lastVisitDate",      -- ✅ CRITICAL: Add this alias
-  last_visit_type as "lastVisitType",      -- ✅ CRITICAL: Add this alias
-  last_visit_notes as "lastVisitNotes",    -- ✅ CRITICAL: Add this alias
+  last_visit_date as "lastVisitDate",
+  last_visit_type as "lastVisitType",
+  last_visit_notes as "lastVisitNotes",
+  location_source as "locationSource",
+  location_accuracy as "locationAccuracy",
   CASE 
     WHEN latitude IS NOT NULL AND longitude IS NOT NULL 
     THEN true 
@@ -301,7 +303,63 @@ export const updateAddress = async (req, res) => {
 };
 
 // ============================================
-// UPDATE CLIENT LOCATION DIRECTLY (Phase 1)
+// TAG CLIENT LOCATION (Phase 1 - Agent tags GPS)
+// ============================================
+export const tagClientLocation = async (req, res) => {
+  const { id } = req.params;
+  const { latitude, longitude, source = 'AGENT' } = req.body;
+  const companyId = req.companyId || req.user.companyId;
+  const userId = req.user.id;
+
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: "Latitude and longitude are required" });
+  }
+
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+
+  if (isNaN(lat) || isNaN(lng)) {
+    return res.status(400).json({ error: "Invalid latitude or longitude" });
+  }
+
+  if (lat < 6 || lat > 38 || lng < 67 || lng > 98) {
+    return res.status(400).json({ error: "Coordinates outside expected range" });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE clients 
+       SET latitude = $1, 
+           longitude = $2, 
+           location_accuracy = 'exact',
+           location_source = $3,
+           updated_at = NOW() 
+       WHERE id = $4 AND (company_id = $5 OR $6 = true)
+       RETURNING id, name, latitude, longitude, location_accuracy, location_source`,
+      [lat, lng, source, id, companyId, req.user.isAdmin]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    // Log the tagging to location_tag_log
+    await pool.query(
+      `INSERT INTO location_tag_log (client_id, tagged_by, latitude, longitude, source, tagged_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [id, userId, lat, lng, source]
+    );
+
+    console.log(`✅ Location tagged for client ${id}: ${lat}, ${lng} (${source})`);
+    res.json({ success: true, message: "Location saved", client: result.rows[0] });
+  } catch (err) {
+    console.error("Error tagging location:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// ============================================
+// UPDATE CLIENT LOCATION DIRECTLY (Phase 1 - existing endpoint)
 // ============================================
 export const updateLocation = async (req, res) => {
   const { id } = req.params;
@@ -317,6 +375,7 @@ export const updateLocation = async (req, res) => {
       `UPDATE clients 
        SET latitude = $1, 
            longitude = $2, 
+           location_accuracy = 'exact',
            notes = COALESCE(notes, '') || '\n[GPS Tagged at ' || NOW() || ' with ' || $3 || 'm accuracy]',
            updated_at = NOW() 
        WHERE id = $4 AND (company_id = $5 OR $6 = true)

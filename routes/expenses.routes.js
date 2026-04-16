@@ -79,12 +79,45 @@ router.put("/:id",
 
 // ============================================
 // DELETE EXPENSE
-// ============================================
+// ====================================
 // Blocked for trial users
 router.delete("/:id", 
   authenticateToken,
   blockTrialUserWrites,  // ← NEW: Block trial users
   asyncHandler(expensesController.deleteExpense)
+);
+
+// ============================================
+// ACTIVE TRIP APIs
+// ============================================
+// Get active trip for agent
+router.get("/active-trip/:agentId", 
+  authenticateToken,
+  asyncHandler(expensesController.getActiveTrip)
+);
+
+// Start trip (change status to IN_PROGRESS)
+router.post("/start-trip/:agentId", 
+  authenticateToken,
+  asyncHandler(expensesController.startTrip)
+);
+
+// Complete current leg
+router.post("/complete-leg/:agentId", 
+  authenticateToken,
+  asyncHandler(expensesController.completeLeg)
+);
+
+// Get receipts for trip or leg
+router.get("/receipts", 
+  authenticateToken,
+  asyncHandler(expensesController.getReceipts)
+);
+
+// Link receipt to leg
+router.post("/link-receipt", 
+  authenticateToken,
+  asyncHandler(expensesController.linkReceiptToLeg)
 );
 
 export default router;

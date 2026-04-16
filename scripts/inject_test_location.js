@@ -16,8 +16,8 @@ async function injectTestLocation() {
     const { id: userId, company_id: companyId } = userRes.rows[0];
 
     // 2. Inject a location log near the test client (Lodha Supremus coordinates used in seed_test_client.js)
-    const lat = 19.19825;
-    const lng = 72.94904;
+    const lat = 19.11529;
+    const lng = 72.96509;
 
     await pool.query(`
       INSERT INTO location_logs 

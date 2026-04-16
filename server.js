@@ -28,10 +28,10 @@ import adminRoutes from "./routes/admin.routes.js";
 import syncRoutes from "./routes/sync.routes.js";
 import servicesRoutes from './routes/services.routes.js';
 import manualClientRoutes from './routes/manualClient.routes.js';
-import companyRoutes from './routes/company.routes.js';
+import companyRoutes from "./routes/company.routes.js";
 import integrationRoutes from "./routes/integrations.routes.js";
 import licenseRoutes from './routes/license.routes.js';
-import planRoutes from './routes/plan.routes.js'; // ← NEW
+import planRoutes from './routes/plan.routes.js';
 import quickVisitsRoutes from './routes/quickVisits.routes.js';
 
 const app = express();
@@ -199,8 +199,6 @@ app.listen(PORT, () => {
   console.log(`💎 Plan-based limitations enabled`);  // ← NEW
   console.log(`📦 Request body limit: 10mb`);
   
-  // ============================================
-  // AUTO-GEOCODE TRIGGER
-  // ============================================
-  startBackgroundGeocode();
+  // Background geocoding disabled - uncomment if needed
+  // startBackgroundGeocode();
 });

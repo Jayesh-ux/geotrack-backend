@@ -44,4 +44,19 @@ router.get("/journey/:userId/:date", async (req, res, next) => {
 router.post("/self-heal-clients", asyncHandler(adminController.selfHealClients));
 router.patch("/clients/:id/location", asyncHandler(adminController.updateClientLocation));
 
+// ============================================
+// SET CLIENT LOCATION (Phase 2 - Admin pins location)
+// ============================================
+router.post("/clients/:id/set-location", asyncHandler(adminController.setClientLocation));
+
+// ============================================
+// MISSING LOCATIONS REPORT (Most Important)
+// ============================================
+router.get("/clients/missing-locations", asyncHandler(adminController.getMissingLocations));
+
+// ============================================
+// LOCATION REPORT (Admin dashboard)
+// ============================================
+router.get("/clients/location-report", asyncHandler(adminController.getLocationReport));
+
 export default router;

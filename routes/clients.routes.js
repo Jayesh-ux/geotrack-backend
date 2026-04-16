@@ -82,7 +82,15 @@ router.patch("/:id/address",
 );
 
 // ============================================
-// UPDATE CLIENT LOCATION (Phase 1)
+// TAG CLIENT LOCATION (Phase 1 - Agent tags GPS)
+// ============================================
+router.post("/:id/tag-location",
+  authenticateToken,
+  asyncHandler(clientsController.tagClientLocation)
+);
+
+// ============================================
+// UPDATE CLIENT LOCATION (Phase 1 - existing)
 // ============================================
 router.patch("/:id/location",
   authenticateToken,

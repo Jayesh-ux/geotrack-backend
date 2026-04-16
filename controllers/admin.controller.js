@@ -1289,83 +1289,55 @@ export const getLiveAgents = async (req, res) => {
 };
 
 export const selfHealClients = async (req, res) => {
-  let healedByLogs = 0;
-  let healedByApi = 0;
-  let failed = 0;
+  console.log('===== SELF-HEAL DEBUG =====');
+  console.log('REQ USER:', JSON.stringify(req.user));
+  console.log('REQ COMPANY_ID (from middleware):', req.companyId);
+  console.log('REQ USER COMPANY_ID:', req.user?.companyId);
+  
+  let skipped = 0;
+  let noAddress = 0;
 
   try {
+    const companyId = req.companyId || req.user?.companyId;
+    console.log('FINAL COMPANY_ID:', companyId);
+    
+    // Get clients with NULL coordinates (NO more geocoding!)
     const clientsResult = await pool.query(
-      `SELECT id, address FROM clients
-       WHERE latitude IS NULL OR longitude IS NULL`
+      `SELECT id, name, address FROM clients
+       WHERE (latitude IS NULL OR longitude IS NULL)
+         AND company_id = $1`,
+      [companyId]
     );
     const clients = clientsResult.rows;
     const total = clients.length;
 
+    console.log('MISSING GPS CLIENTS:', total);
+
+    // Count clients without address (require agent visit)
     for (const client of clients) {
-      try {
-        const logsResult = await pool.query(
-          `SELECT latitude, longitude
-           FROM location_logs
-           WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-           ORDER BY created_at DESC
-           LIMIT 1`
-        );
-
-        if (logsResult.rows.length > 0) {
-          const log = logsResult.rows[0];
-          await pool.query(
-            `UPDATE clients SET latitude = $1, longitude = $2 WHERE id = $3`,
-            [log.latitude, log.longitude, client.id]
-          );
-          healedByLogs++;
-          continue;
-        }
-
-        if (client.address) {
-          try {
-            const { default: axios } = await import('axios');
-            const geoResponse = await axios.get(
-              `https://maps.googleapis.com/maps/api/geocode/json`,
-              {
-                params: {
-                  address: client.address,
-                  key: process.env.GOOGLE_MAPS_API_KEY
-                },
-                timeout: 5000
-              }
-            );
-
-            if (
-              geoResponse.data.status === 'OK' &&
-              geoResponse.data.results[0]
-            ) {
-              const { lat, lng } =
-                geoResponse.data.results[0].geometry.location;
-              await pool.query(
-                `UPDATE clients SET latitude = $1, longitude = $2 WHERE id = $3`,
-                [lat, lng, client.id]
-              );
-              healedByApi++;
-            } else {
-              failed++;
-            }
-          } catch (apiError) {
-            console.error('Google API error for client', client.id, apiError.message);
-            failed++;
-          }
-        } else {
-          failed++;
-        }
-      } catch (clientError) {
-        console.error('Recovery error for client', client.id, clientError.message);
-        failed++;
+      const hasRealAddress = client.address && 
+        client.address.trim().length > 10 &&
+        client.address.toLowerCase() !== client.name?.toLowerCase().trim();
+      
+      if (!hasRealAddress) {
+        noAddress++;
       }
     }
+    
+    skipped = noAddress;
 
-    res.json({ total, healedByLogs, healedByApi, failed });
+    console.log(`✅ Self-heal complete: ${total} clients need agent visit, ${skipped} skipped (no valid address)`);
+    res.json({ 
+      total, 
+      healedByLogs: 0, 
+      healedByApi: 0, 
+      skipped, 
+      failed: 0, 
+      message: "⚠️ No auto-healing. All clients with missing GPS require agent to visit physically or admin to pin manually." 
+    });
 
   } catch (error) {
-    console.error('Self-heal fatal error:', error);
+    console.error('Self-heal fatal:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -1377,8 +1349,230 @@ export const updateClientLocation = async (req, res) => {
     return res.status(400).json({ error: "latitude and longitude required" });
   }
   await pool.query(
-    `UPDATE clients SET latitude = $1, longitude = $2 WHERE id = $3`,
+    `UPDATE clients SET latitude = $1, longitude = $2, location_accuracy = 'exact' WHERE id = $3`,
     [latitude, longitude, id]
   );
   res.json({ success: true, id, latitude, longitude });
+};
+
+// ============================================
+// SET CLIENT LOCATION (Phase 2 - Admin pins location)
+// ============================================
+export const setClientLocation = async (req, res) => {
+  const { id } = req.params;
+  const { latitude, longitude, source = 'ADMIN' } = req.body;
+  const companyId = req.companyId || req.user.companyId;
+
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: "Latitude and longitude are required" });
+  }
+
+  const lat = parseFloat(latitude);
+  const lng = parseFloat(longitude);
+
+  if (isNaN(lat) || isNaN(lng)) {
+    return res.status(400).json({ error: "Invalid latitude or longitude" });
+  }
+
+  if (lat < 8 || lat > 37 || lng < 68 || lng > 97) {
+    return res.status(400).json({ error: "Coordinates must be within India bounds" });
+  }
+
+  if (!['ADMIN', 'LANDMARK'].includes(source)) {
+    return res.status(400).json({ error: "Source must be ADMIN or LANDMARK" });
+  }
+
+  try {
+    const result = await pool.query(
+      `UPDATE clients 
+       SET latitude = $1, 
+           longitude = $2, 
+           location_accuracy = 'exact',
+           location_source = $3,
+           updated_at = NOW() 
+       WHERE id = $4 AND (company_id = $5 OR $6 = true)
+       RETURNING id, name, latitude, longitude, location_accuracy, location_source`,
+      [lat, lng, source, id, companyId, req.isSuperAdmin]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    console.log(`✅ Location set for client ${id}: ${lat}, ${lng} (${source})`);
+    res.json({ success: true, client: result.rows[0] });
+  } catch (err) {
+    console.error("Error setting location:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+// ============================================
+// MISSING LOCATIONS REPORT (Most Important)
+// ============================================
+export const getMissingLocations = async (req, res) => {
+  const companyId = req.companyId || req.user.companyId;
+  const isSuperAdmin = req.isSuperAdmin;
+
+  try {
+    const companyFilter = isSuperAdmin ? '' : 'WHERE company_id = $1';
+    const params = isSuperAdmin ? [] : [companyId];
+
+    // Get all missing clients with recommendations
+    const clientsResult = await pool.query(
+      `SELECT
+        c.id,
+        c.name,
+        c.address,
+        c.phone,
+        c.email,
+        c.latitude,
+        c.longitude,
+        c.location_accuracy,
+        c.location_source,
+        c.status,
+        CASE
+          WHEN c.address IS NULL OR TRIM(c.address) = '' OR c.address = 'no address'
+            THEN 'AGENT_VISIT'
+          WHEN LENGTH(TRIM(c.address)) < 10
+            THEN 'AGENT_VISIT'
+          ELSE 'AGENT_VISIT'
+        END AS recommended_method,
+        CASE
+          WHEN c.address IS NULL OR TRIM(c.address) = '' OR c.address = 'no address'
+            THEN 'No address on file — agent must visit physically'
+          WHEN LENGTH(TRIM(c.address)) < 10
+            THEN 'Address too vague for map pinning — agent must visit'
+          ELSE 'Agent visit recommended for accuracy'
+        END AS recommendation_reason,
+        CASE
+          WHEN c.status = 'active' THEN 1
+          WHEN c.status = 'inactive' THEN 2
+          ELSE 3
+        END AS priority
+      FROM clients c
+      ${companyFilter}
+      ${isSuperAdmin ? '' : 'AND'}
+      ${isSuperAdmin ? '' : '(c.latitude IS NULL OR c.longitude IS NULL OR c.location_accuracy = \'needs_verification\')'}
+      ORDER BY priority ASC, c.name ASC`,
+      params
+    );
+
+    const clients = clientsResult.rows;
+
+    // Get breakdown counts
+    const needsVerifResult = await pool.query(
+      `SELECT COUNT(*) as count FROM clients c 
+       ${companyFilter}
+       ${isSuperAdmin ? '' : 'AND company_id = $1'}
+       ${isSuperAdmin ? '' : 'AND c.location_accuracy = \'needs_verification\''}`,
+      params
+    );
+
+    const completelyMissingResult = await pool.query(
+      `SELECT COUNT(*) as count FROM clients c 
+       WHERE c.latitude IS NULL AND c.longitude IS NULL 
+       ${isSuperAdmin ? '' : 'AND c.company_id = $1'}`,
+      params
+    );
+
+    const needsVerification = parseInt(needsVerifResult.rows[0]?.count || 0);
+    const completelyMissing = parseInt(completelyMissingResult.rows[0]?.count || 0);
+
+    const clientsList = clients.map(c => ({
+      id: c.id,
+      name: c.name,
+      address: c.address,
+      phone: c.phone,
+      status: c.status,
+      location_accuracy: c.location_accuracy,
+      location_source: c.location_source,
+      recommended_method: c.recommended_method,
+      recommendation_reason: c.recommendation_reason,
+      priority: c.priority
+    }));
+
+    res.json({
+      total_missing: clientsList.length,
+      breakdown: {
+        needs_verification: needsVerification,
+        completely_missing: completelyMissing,
+        agent_visit_recommended: clientsList.length,
+        admin_pin_possible: 0
+      },
+      clients: clientsList
+    });
+  } catch (err) {
+    console.error("Error generating missing locations report:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ============================================
+// LOCATION REPORT (Admin dashboard)
+// ============================================
+export const getLocationReport = async (req, res) => {
+  const companyId = req.companyId || req.user.companyId;
+  const isSuperAdmin = req.isSuperAdmin;
+
+  try {
+    const companyFilter = isSuperAdmin ? '' : 'WHERE company_id = $1';
+    const params = isSuperAdmin ? [] : [companyId];
+
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) as total FROM clients ${companyFilter}`,
+      params
+    );
+
+    const withGpsResult = await pool.query(
+      `SELECT COUNT(*) as count FROM clients 
+       WHERE latitude IS NOT NULL AND longitude IS NOT NULL 
+       ${isSuperAdmin ? '' : 'AND company_id = $1'}`,
+      params
+    );
+
+    const missingGpsResult = await pool.query(
+      `SELECT COUNT(*) as count FROM clients 
+       WHERE latitude IS NULL OR longitude IS NULL 
+       ${isSuperAdmin ? '' : 'AND company_id = $1'}`,
+      params
+    );
+
+    const bySourceResult = await pool.query(
+      `SELECT 
+        COALESCE(location_source, 'unknown') as source,
+        COUNT(*) as count
+       FROM clients 
+       ${isSuperAdmin ? '' : 'WHERE company_id = $1'}
+       GROUP BY COALESCE(location_source, 'unknown')`,
+      params
+    );
+
+    const bySource = {
+      AGENT: 0,
+      ADMIN: 0,
+      LANDMARK: 0,
+      GOOGLE: 0,
+      needs_verification: 0,
+      unknown: 0
+    };
+
+    for (const row of bySourceResult.rows) {
+      if (row.source in bySource) {
+        bySource[row.source] = parseInt(row.count);
+      } else {
+        bySource.unknown += parseInt(row.count);
+      }
+    }
+
+    res.json({
+      total: parseInt(totalResult.rows[0].total),
+      with_gps: parseInt(withGpsResult.rows[0].count),
+      missing_gps: parseInt(missingGpsResult.rows[0].count),
+      by_source: bySource
+    });
+  } catch (err) {
+    console.error("Error generating location report:", err);
+    res.status(500).json({ error: err.message });
+  }
 };

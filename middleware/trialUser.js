@@ -13,6 +13,16 @@ export const blockTrialUserWrites = (req, res, next) => {
     return next();
   }
 
+  // Allow field agents to update client locations (Phase 1)
+  // Only block for /clients/:id (full update) but allow /clients/:id/location
+  if (req.method === 'PATCH' && req.path.endsWith('/location')) {
+    return next();
+  }
+  // Also allow address updates for field agents
+  if (req.method === 'PATCH' && req.path.endsWith('/address')) {
+    return next();
+  }
+
   // Check if user is trial user
   if (req.user.isTrialUser) {
     const restrictions = getTrialUserRestrictions();
