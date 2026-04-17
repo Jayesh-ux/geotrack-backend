@@ -281,7 +281,11 @@ export const getMeetings = async (req, res) => {
 
   if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
     // Admin fetching all company meetings
-    queryBase = `FROM meetings m LEFT JOIN clients c ON m.client_id = c.id WHERE m.company_id = $1`;
+    queryBase = `FROM meetings m 
+                 LEFT JOIN clients c ON m.client_id = c.id 
+                 LEFT JOIN users u ON m.user_id = u.id
+                 LEFT JOIN profiles p ON u.id = p.user_id
+                 WHERE m.company_id = $1`;
     params = [companyId];
     paramCount = 1;
   } else {
