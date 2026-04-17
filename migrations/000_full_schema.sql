@@ -1,6 +1,8 @@
 -- Full Schema Migration
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS cube;
+CREATE EXTENSION IF NOT EXISTS earthdistance;
 
 CREATE TABLE IF NOT EXISTS "client_location_cache" (
   "id" SERIAL,

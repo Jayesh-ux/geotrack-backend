@@ -16,7 +16,6 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { authenticateToken } from "./middleware/auth.js";
 import { attachCompanyContext } from "./middleware/company.js";
 import { attachPlanFeatures } from "./middleware/featureAuth.js";
-import { startBackgroundGeocode } from "./utils/geocodeBatch.js";
 
 // Route imports
 import authRoutes from "./routes/auth.routes.js";

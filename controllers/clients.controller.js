@@ -4,7 +4,6 @@
 import xlsx from "xlsx";
 import { pool } from "../db.js";
 import { getCoordinatesFromPincode, getCoordinatesFromAddress, getPincodeFromCoordinates } from "../services/geocoding.service.js";
-import { startBackgroundGeocode } from "../utils/geocodeBatch.js";
 
 
 const CLIENT_SELECT_FIELDS = `
@@ -236,9 +235,6 @@ export const uploadExcel = async (req, res) => {
 
     console.log("✅ Upload completed:", summary);
 
-    // Trigger background geocoding
-    startBackgroundGeocode();
-
     res.json({
       status: "OK",
       summary
@@ -282,20 +278,8 @@ export const updateAddress = async (req, res) => {
       return res.status(404).json({ error: "Client not found" });
     }
 
-    const client = updateResult.rows[0];
-
-    // 2. Trigger Geocoding (Phase 4 Fallback)
-    const { geocodeSingleClientWithStrategies } = await import("../utils/geocodeBatch.js");
-    const geoResult = await geocodeSingleClientWithStrategies(client);
-
-    if (geoResult.success) {
-      // Re-fetch with new coordinates
-      const finalResult = await pool.query("SELECT * FROM clients WHERE id = $1", [id]);
-      return res.json(finalResult.rows[0]);
-    }
-
-    // Return client even if geocoding failed (will show as hidden/missing GPS)
-    res.json(client);
+    // Return client - no geocoding allowed
+    res.json(updateResult.rows[0]);
   } catch (err) {
     console.error("Error updating address:", err);
     res.status(500).json({ error: "Internal Server Error" });

@@ -1349,7 +1349,7 @@ export const updateClientLocation = async (req, res) => {
     return res.status(400).json({ error: "latitude and longitude required" });
   }
   await pool.query(
-    `UPDATE clients SET latitude = $1, longitude = $2, location_accuracy = 'exact' WHERE id = $3`,
+    `UPDATE clients SET latitude = $1, longitude = $2, location_accuracy = 'exact', location_source = 'ADMIN' WHERE id = $3`,
     [latitude, longitude, id]
   );
   res.json({ success: true, id, latitude, longitude });
@@ -1378,8 +1378,8 @@ export const setClientLocation = async (req, res) => {
     return res.status(400).json({ error: "Coordinates must be within India bounds" });
   }
 
-  if (!['ADMIN', 'LANDMARK'].includes(source)) {
-    return res.status(400).json({ error: "Source must be ADMIN or LANDMARK" });
+  if (!['ADMIN'].includes(source)) {
+    return res.status(400).json({ error: "Source must be ADMIN only" });
   }
 
   try {
@@ -1413,6 +1413,8 @@ export const setClientLocation = async (req, res) => {
 export const getMissingLocations = async (req, res) => {
   const companyId = req.companyId || req.user.companyId;
   const isSuperAdmin = req.isSuperAdmin;
+
+  console.log('🔍 getMissingLocations called:', { companyId, isSuperAdmin });
 
   try {
     const companyFilter = isSuperAdmin ? '' : 'WHERE company_id = $1';
@@ -1457,6 +1459,8 @@ export const getMissingLocations = async (req, res) => {
       ORDER BY priority ASC, c.name ASC`,
       params
     );
+
+    console.log('📊 Found missing clients:', clientsResult.rows.length);
 
     const clients = clientsResult.rows;
 

@@ -7,19 +7,29 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-console.log("🛠️  Project Env Config:");
-console.log(`- DB_USER: ${process.env.DB_USER}`);
-console.log(`- DB_HOST: ${process.env.DB_HOST}`);
-console.log(`- DB_NAME: ${process.env.DB_NAME}`);
-console.log(`- DB_PORT: ${process.env.DB_PORT}`);
+const connectionString = process.env.DATABASE_URL;
 
-const pool = new Pool({
-    user: process.env.DB_USER || "postgres",
-    host: process.env.DB_HOST || "localhost",
-    database: process.env.DB_NAME || "client_tracking_app",
-    password: process.env.DB_PASSWORD || "root",
-    port: parseInt(process.env.DB_PORT) || 5432,
-});
+console.log("🛠️  Project Env Config:");
+console.log(`- DB_USER: ${process.env.DB_USER || 'from DATABASE_URL'}`);
+console.log(`- DB_HOST: ${process.env.DB_HOST || 'from DATABASE_URL'}`);
+console.log(`- DB_NAME: ${process.env.DB_NAME || 'from DATABASE_URL'}`);
+console.log(`- DB_PORT: ${process.env.DB_PORT || 'from DATABASE_URL'}`);
+console.log(`- DATABASE_URL: ${connectionString ? 'SET ✓' : 'NOT SET'}`);
+
+const pool = new Pool(
+    connectionString
+        ? {
+            connectionString: connectionString,
+            ssl: { rejectUnauthorized: false }
+        }
+        : {
+            user: process.env.DB_USER || "postgres",
+            host: process.env.DB_HOST || "localhost",
+            database: process.env.DB_NAME || "client_tracking_app",
+            password: process.env.DB_PASSWORD || "root",
+            port: parseInt(process.env.DB_PORT) || 5432,
+        }
+);
 
 async function run() {
     console.log("\n🚀 Starting local PostGIS migration...");
