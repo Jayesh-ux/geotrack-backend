@@ -25,6 +25,15 @@ router.get("/agents/live", asyncHandler(adminController.getLiveAgents)); // ✅ 
 router.get("/daily-summary", asyncHandler(adminController.getAdminDailySummary)); // ✅ Android App Admin Dashboard
 router.get("/client-services", asyncHandler(adminController.getClientServices)); // Missing route
 
+// ✅ ADD: Create client service
+router.post("/client-services", asyncHandler(adminController.createClientService));
+
+// ✅ ADD: Get services dashboard stats
+router.get("/services/dashboard", asyncHandler(adminController.getServicesDashboard));
+
+// ✅ ADD: Agent status toggle
+router.patch("/agents/:userId/status", asyncHandler(adminController.toggleAgentStatus));
+
 // NEW USER MANAGEMENT ROUTES
 router.post("/users", asyncHandler(adminController.createUser));
 router.get("/users/:userId", asyncHandler(adminController.getUserDetails));

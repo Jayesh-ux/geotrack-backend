@@ -285,9 +285,10 @@ export const getMeetings = async (req, res) => {
                  LEFT JOIN clients c ON m.client_id = c.id 
                  LEFT JOIN users u ON m.user_id = u.id
                  LEFT JOIN profiles p ON u.id = p.user_id
-                 WHERE m.company_id = $1`;
-    params = [companyId];
-    paramCount = 1;
+                 LEFT JOIN companies comp ON m.company_id = comp.id
+                 WHERE 1=1`;
+    params = [];
+    paramCount = 0;
   } else {
     // Single user meetings
     let queryId = req.user.id;
@@ -298,9 +299,10 @@ export const getMeetings = async (req, res) => {
                  LEFT JOIN clients c ON m.client_id = c.id 
                  LEFT JOIN users u ON m.user_id = u.id
                  LEFT JOIN profiles p ON u.id = p.user_id
-                 WHERE m.user_id = $1 AND m.company_id = $2`;
-    params = [queryId, companyId];
-    paramCount = 2;
+                 LEFT JOIN companies comp ON m.company_id = comp.id
+                 WHERE m.user_id = $1`;
+    params = [queryId];
+    paramCount = 1;
   }
 
   let query = `
@@ -315,6 +317,8 @@ export const getMeetings = async (req, res) => {
       m.attachments,
       m.created_at as "createdAt",
       p.full_name as "agentName",
+      u.email as "agentEmail",
+      comp.name as "companyName",
       c.name as "clientName",
       c.address as "clientAddress"
     ${queryBase}
@@ -344,6 +348,13 @@ export const getMeetings = async (req, res) => {
     params.push(endDate);
   }
 
+  // ✅ Add company filter for non-super admins
+  if (!req.isSuperAdmin && req.companyId) {
+    paramCount++;
+    query += ` AND m.company_id = $${paramCount}`;
+    params.push(req.companyId);
+  }
+
   query += ` ORDER BY m.start_time DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
   params.push(limit, offset);
 
@@ -353,16 +364,31 @@ export const getMeetings = async (req, res) => {
   let countQuery;
   let countParams;
 
-  if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
-    countQuery = "SELECT COUNT(*) FROM meetings WHERE company_id = $1";
-    countParams = [companyId];
-  } else {
-    let queryId = req.user.id;
-    if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
-      queryId = userId;
+  if (!req.isSuperAdmin && req.companyId) {
+    if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
+      countQuery = "SELECT COUNT(*) FROM meetings WHERE company_id = $1";
+      countParams = [req.companyId];
+    } else {
+      let queryId = req.user.id;
+      if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
+        queryId = userId;
+      }
+      countQuery = "SELECT COUNT(*) FROM meetings WHERE user_id = $1 AND company_id = $2";
+      countParams = [queryId, req.companyId];
     }
-    countQuery = "SELECT COUNT(*) FROM meetings WHERE user_id = $1 AND company_id = $2";
-    countParams = [queryId, companyId];
+  } else {
+    // Super admin sees all or filtered by company query param
+    if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
+      countQuery = "SELECT COUNT(*) FROM meetings WHERE 1=1";
+      countParams = [];
+    } else {
+      let queryId = req.user.id;
+      if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
+        queryId = userId;
+      }
+      countQuery = "SELECT COUNT(*) FROM meetings WHERE user_id = $1";
+      countParams = [queryId];
+    }
   }
   
   const countResult = await pool.query(countQuery, countParams);

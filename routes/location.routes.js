@@ -4,48 +4,69 @@ import { asyncHandler } from "../middleware/errorHandler.js";
 import { 
   blockTrialUserWrites, 
   enforceTrialUserLimits 
-} from "../middleware/trialUser.js";  // ← NEW IMPORT
+} from "../middleware/trialUser.js";
 import * as locationController from "../controllers/location.controller.js";
 
 const router = express.Router();
 
-// ============================================
-// CREATE LOCATION LOG
-// ============================================
-// Blocked for trial users (trial users can't track location)
 router.post("/", 
   authenticateToken,
-  blockTrialUserWrites,  // ← NEW: Block trial users
+  blockTrialUserWrites,
   asyncHandler(locationController.createLocationLog)
 );
 
-// ============================================
-// GET LOCATION LOGS
-// ============================================
-// Allow trial users with limits
 router.get("/", 
   authenticateToken,
-  enforceTrialUserLimits,  // ← NEW: Allow trial users
+  enforceTrialUserLimits,
   asyncHandler(locationController.getLocationLogs)
 );
 
-// ============================================
-// GET CLOCK-IN STATUS
-// ============================================
-// Allow trial users
 router.get("/clock-in", 
   authenticateToken,
-  enforceTrialUserLimits,  // ← NEW: Allow trial users
+  enforceTrialUserLimits,
   asyncHandler(locationController.getClockIn)
 );
 
-// ============================================
-// GET DAILY SUMMARY (distance + meetings + expenses in one call)
-// ============================================
 router.get("/daily-summary",
   authenticateToken,
   enforceTrialUserLimits,
   asyncHandler(locationController.getDailySummary)
+);
+
+router.get("/tracking-state",
+  authenticateToken,
+  enforceTrialUserLimits,
+  asyncHandler(locationController.getTrackingStateEndpoint)
+);
+
+router.post("/clock-in",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(locationController.clockIn)
+);
+
+router.post("/clock-out",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(locationController.clockOut)
+);
+
+router.post("/pause",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(locationController.pauseSession)
+);
+
+router.post("/resume",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(locationController.resumeSession)
+);
+
+router.post("/resume-tracking",
+  authenticateToken,
+  blockTrialUserWrites,
+  asyncHandler(locationController.resumeTrackingFromPauseEndpoint)
 );
 
 export default router;

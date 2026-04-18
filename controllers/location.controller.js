@@ -1,13 +1,42 @@
 // controllers/location.controller.js
-// UPDATED: All queries now filter by company_id
+// UPDATED: Session state + movement validation + false travel detection
 
 import { pool } from "../db.js";
 import { getPincodeFromCoordinates } from "../services/geocoding.service.js";
+import {
+  SESSION_STATES,
+  TRACKING_CONFIG,
+  haversineDistance,
+  calculateSpeed,
+  isValidMovement,
+  validateSessionActive,
+  validateTrainMode,
+  checkIdleTimeout,
+  shouldSkipApiCall,
+  getTransportModeFromRequest,
+  updateLastValidLocation,
+  getLastValidLocation,
+  isIdle,
+  stopTracking,
+  resumeTracking,
+  getTrackingState,
+  validateBatteryData,
+  validateLocationLog,
+  getLocationConfidence,
+  getValidationStatus,
+  resumeTrackingFromPause,
+  isTrackingPausedState,
+  logValidationDebug
+} from "../services/tracking.service.js";
+
+let lastLogTimestamp = null;
+let lastLogLat = null;
+let lastLogLng = null;
+let sessionState = SESSION_STATES.NOT_STARTED;
 
 export const createLocationLog = async (req, res) => {
-  const { latitude, longitude, accuracy, activity, notes, battery, markActivity, markNotes } = req.body;
+  const { latitude, longitude, accuracy, activity, notes, battery, markActivity, markNotes, sessionState: clientSessionState, timestamp: clientTimestamp } = req.body;
 
-  // Use markActivity/markNotes as fallback for Android compatibility
   const finalActivity = activity || markActivity;
   const finalNotes = notes || markNotes;
 
@@ -15,11 +44,80 @@ export const createLocationLog = async (req, res) => {
     return res.status(400).json({ error: "LocationRequired" });
   }
 
-  // ✅ OPTIMIZED: Remove mandatory per-log geocoding to save costs/performance
-  // Pincode is only fetched for specific activities if needed
+  const validationResult = await validateLocationLog(
+    req.user.id,
+    req.companyId,
+    latitude,
+    longitude,
+    accuracy,
+    battery,
+    clientTimestamp,
+    finalActivity
+  );
+
+  if (!validationResult.valid) {
+    const error = validationResult.errors[0];
+    
+    const idleStateFlag = error.error === "IdleState" || error.error === "TrackingPaused";
+    
+    const result = await pool.query(
+      `INSERT INTO location_logs 
+       (user_id, latitude, longitude, accuracy, activity, notes, pincode, battery, company_id, 
+        distance_delta, speed_kmh, validated, validation_reason, transport_mode, battery_stale,
+        location_confidence, is_initial, rejection_reason, idle_state_flag)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       RETURNING *`,
+      [
+        req.user.id, latitude, longitude, accuracy ?? null, finalActivity || null,
+        finalNotes || null, pincode, battery ?? null, req.companyId,
+        null, null, false, error.error, transportMode, batteryData.batteryStale || false,
+        getLocationConfidence(accuracy), validationResult.isInitial || false, error.error, idleStateFlag
+      ]
+    );
+    
+    return res.status(403).json({
+      error: error.error,
+      message: error.message,
+      requiresResume: validationResult.requiresResume || false,
+      resumeOnMovement: validationResult.resumeOnMovement || false
+    });
+  }
+
+  const now = new Date();
+  let distanceDelta = null;
+  let speedKmh = null;
+  let validated = true;
+  let validationReason = null;
+  let isInitial = validationResult.isInitial || false;
+
+  const lastValid = getLastValidLocation();
+  
+  if (lastValid && finalActivity !== "CLOCK_IN") {
+    const timeDiffMs = now - lastValidTimestamp;
+    const movementCheck = isValidMovement(latitude, longitude, lastValid.lat, lastValid.lng, timeDiffMs, accuracy);
+
+    if (!movementCheck.valid) {
+      validated = false;
+      validationReason = movementCheck.reason;
+      console.log(`⚠️ Invalid movement rejected: ${movementCheck.reason}, distance: ${movementCheck.distance?.toFixed(1)}m, speed: ${movementCheck.speed?.toFixed(1)} km/h`);
+    } else {
+      distanceDelta = isInitial ? null : movementCheck.distance;
+      speedKmh = isInitial ? null : movementCheck.speed;
+      updateLastValidLocation(latitude, longitude, now);
+    }
+  } else {
+    isInitial = true;
+    updateLastValidLocation(latitude, longitude, now);
+  }
+
+  const batteryData = validateBatteryData(battery, clientTimestamp);
+  const batteryStale = batteryData.batteryStale || false;
+  const locationConfidence = getLocationConfidence(accuracy);
+  const validationStatus = getValidationStatus({ valid: validated }, accuracy);
+
   let pincode = null;
   const eventsNeedingGeocode = ["CLOCK_IN", "CLOCK_OUT", "MEETING_START", "MEETING_END"];
-  
+
   if (eventsNeedingGeocode.includes(finalActivity)) {
     try {
       pincode = await getPincodeFromCoordinates(latitude, longitude);
@@ -28,14 +126,24 @@ export const createLocationLog = async (req, res) => {
     }
   }
 
+  const transportMode = getTransportModeFromRequest(req.body);
+  const idleStateFlag = isIdle() && finalActivity !== "CLOCK_IN";
+
   const result = await pool.query(
-    `INSERT INTO location_logs (user_id, latitude, longitude, accuracy, activity, notes, pincode, battery, company_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO location_logs 
+     (user_id, latitude, longitude, accuracy, activity, notes, pincode, battery, company_id, 
+      distance_delta, speed_kmh, validated, validation_reason, transport_mode, battery_stale,
+      location_confidence, is_initial, rejection_reason, idle_state_flag)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      RETURNING *`,
-    [req.user.id, latitude, longitude, accuracy || null, finalActivity || null, finalNotes || null, pincode, battery || null, req.companyId]
+    [
+      req.user.id, latitude, longitude, accuracy ?? null, finalActivity || null,
+      finalNotes || null, pincode, battery ?? null, req.companyId,
+      distanceDelta, speedKmh, validated, validationReason, transportMode, batteryStale,
+      locationConfidence, isInitial, validationReason, idleStateFlag
+    ]
   );
 
-  // ✅ UPDATED: Update user real-time status (pincode, last_seen, battery, activity)
   let userUpdateQuery = "UPDATE users SET last_seen = NOW()";
   const userUpdateParams = [];
   let paramIdx = 0;
@@ -63,30 +171,201 @@ export const createLocationLog = async (req, res) => {
   userUpdateParams.push(req.user.id);
 
   await pool.query(userUpdateQuery, userUpdateParams);
-  console.log(`📌 Updated user ${req.user.id} status (Pincode: ${pincode}, Battery: ${battery}%)`);
+
+  lastLogTimestamp = now;
+  lastLogLat = latitude;
+  lastLogLng = longitude;
 
   const log = result.rows[0];
-  const mappedLog = {
+  const response = {
     id: log.id,
     userId: log.user_id,
     latitude: log.latitude,
     longitude: log.longitude,
     accuracy: log.accuracy,
     battery: log.battery,
+    batteryStale: log.battery_stale,
     activity: log.activity,
     notes: log.notes,
-    markActivity: log.activity, // Added for Android App compatibility
-    markNotes: log.notes, // Added for Android App compatibility
+    markActivity: log.activity,
+    markNotes: log.notes,
     pincode: log.pincode,
-    timestamp: log.timestamp
+    timestamp: log.timestamp,
+    distanceDelta: log.distance_delta,
+    speedKmh: log.speed_kmh,
+    validated: log.validated,
+    validationReason: log.validation_reason,
+    locationConfidence: log.location_confidence,
+    isInitial: log.is_initial,
+    rejectionReason: log.rejection_reason,
+    idleStateFlag: log.idle_state_flag
   };
 
-  console.log(`🔋 Battery: ${battery}% | ✅ Location logged with pincode: ${pincode}`);
+  logValidationDebug({
+    lat: log.latitude,
+    lng: log.longitude,
+    distanceDelta: log.distance_delta,
+    speed: log.speed_kmh,
+    accuracy: log.accuracy,
+    battery: log.battery,
+    batteryStale: log.battery_stale,
+    sessionState: sessionState,
+    validated: log.validated,
+    validationReason: log.validation_reason,
+    locationConfidence: log.location_confidence,
+    isInitial: log.is_initial,
+    idleStateFlag: log.idle_state_flag
+  });
+
+  const responseObj = {
+    message: "LocationLogged",
+    log: response
+  };
+
+  if (validationResult.warnings && validationResult.warnings.length > 0) {
+    responseObj.warnings = validationResult.warnings;
+  }
+
+  res.status(201).json(responseObj);
+};
+
+export const clockIn = async (req, res) => {
+  const { latitude, longitude } = req.body;
+
+  if (!latitude || !longitude) {
+    return res.status(400).json({ error: "LocationRequired" });
+  }
+
+  let pincode = null;
+  try {
+    pincode = await getPincodeFromCoordinates(latitude, longitude);
+  } catch (e) {
+    console.warn("Geocoding failed");
+  }
+
+  const sessionResult = await pool.query(
+    `INSERT INTO user_tracking_sessions 
+     (user_id, company_id, session_state, started_at, clock_in_location)
+     VALUES ($1, $2, $3, NOW(), $4)
+     RETURNING *`,
+    [req.user.id, req.companyId, SESSION_STATES.ACTIVE, JSON.stringify({ lat: latitude, lng: longitude, pincode })]
+  );
+
+  const session = sessionResult.rows[0];
+
+  await pool.query(
+    `UPDATE users SET current_session_id = $1, session_state = $2 
+     WHERE id = $3`,
+    [session.id, SESSION_STATES.ACTIVE, req.user.id]
+  );
+
+  sessionState = SESSION_STATES.ACTIVE;
 
   res.status(201).json({
-    message: "LocationLogged",
-    log: mappedLog
+    message: "ClockedIn",
+    session: {
+      id: session.id,
+      state: session.session_state,
+      startedAt: session.started_at
+    }
   });
+};
+
+export const clockOut = async (req, res) => {
+  const { latitude, longitude } = req.body;
+
+  const currentSession = await pool.query(
+    `SELECT id FROM user_tracking_sessions 
+     WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'
+     ORDER BY started_at DESC LIMIT 1`,
+    [req.user.id, req.companyId]
+  );
+
+  if (currentSession.rows.length === 0) {
+    return res.status(400).json({ error: "NoActiveSession" });
+  }
+
+  await pool.query(
+    `UPDATE user_tracking_sessions 
+     SET session_state = $1, ended_at = NOW(), clock_out_location = $2
+     WHERE id = $3`,
+    [SESSION_STATES.ENDED, JSON.stringify({ lat: latitude, lng: longitude }), currentSession.rows[0].id]
+  );
+
+  await pool.query(
+    `UPDATE users SET session_state = $1, current_session_id = NULL 
+     WHERE id = $2`,
+    [SESSION_STATES.ENDED, req.user.id]
+  );
+
+  sessionState = SESSION_STATES.ENDED;
+  lastLogTimestamp = null;
+  lastLogLat = null;
+  lastLogLng = null;
+  stopTracking();
+
+  res.json({
+    message: "ClockedOut",
+    sessionState: SESSION_STATES.ENDED
+  });
+};
+
+export const pauseSession = async (req, res) => {
+  const currentSession = await pool.query(
+    `SELECT id FROM user_tracking_sessions 
+     WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'
+     ORDER BY started_at DESC LIMIT 1`,
+    [req.user.id, req.companyId]
+  );
+
+  if (currentSession.rows.length === 0) {
+    return res.status(400).json({ error: "NoActiveSession" });
+  }
+
+  await pool.query(
+    `UPDATE user_tracking_sessions 
+     SET session_state = $1, paused_at = NOW()
+     WHERE id = $2`,
+    [SESSION_STATES.PAUSED, currentSession.rows[0].id]
+  );
+
+  await pool.query(
+    `UPDATE users SET session_state = $1 WHERE id = $2`,
+    [SESSION_STATES.PAUSED, req.user.id]
+  );
+
+  sessionState = SESSION_STATES.PAUSED;
+
+  res.json({ message: "SessionPaused", sessionState: SESSION_STATES.PAUSED });
+};
+
+export const resumeSession = async (req, res) => {
+  const currentSession = await pool.query(
+    `SELECT id FROM user_tracking_sessions 
+     WHERE user_id = $1 AND company_id = $2 AND session_state = 'PAUSED'
+     ORDER BY paused_at DESC LIMIT 1`,
+    [req.user.id, req.companyId]
+  );
+
+  if (currentSession.rows.length === 0) {
+    return res.status(400).json({ error: "NoPausedSession" });
+  }
+
+  await pool.query(
+    `UPDATE user_tracking_sessions 
+     SET session_state = $1, resumed_at = NOW()
+     WHERE id = $2`,
+    [SESSION_STATES.ACTIVE, currentSession.rows[0].id]
+  );
+
+  await pool.query(
+    `UPDATE users SET session_state = $1 WHERE id = $2`,
+    [SESSION_STATES.ACTIVE, req.user.id]
+  );
+
+  sessionState = SESSION_STATES.ACTIVE;
+
+  res.json({ message: "SessionResumed", sessionState: SESSION_STATES.ACTIVE });
 };
 
 export const getLocationLogs = async (req, res) => {
@@ -99,11 +378,12 @@ export const getLocationLogs = async (req, res) => {
   let paramCount;
 
   if (userId === "all" && (req.user.isAdmin || req.isSuperAdmin)) {
-    // Admin fetching logs for the entire company
-    query = `SELECT l.*, u.email, p.full_name as "agentName" 
+    // Admin/SuperAdmin fetching logs for the entire company or all companies
+    query = `SELECT l.*, u.email, p.full_name as "agentName", c.name as "companyName" 
              FROM location_logs l 
              JOIN users u ON l.user_id = u.id 
              LEFT JOIN profiles p ON u.id = p.user_id
+             LEFT JOIN companies c ON l.company_id = c.id
              WHERE 1=1`;
     params = [];
     paramCount = 0;
@@ -113,10 +393,11 @@ export const getLocationLogs = async (req, res) => {
     if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
       queryId = userId;
     }
-    query = `SELECT l.*, u.email, p.full_name as "agentName" 
+    query = `SELECT l.*, u.email, p.full_name as "agentName", c.name as "companyName" 
              FROM location_logs l 
              JOIN users u ON l.user_id = u.id 
              LEFT JOIN profiles p ON u.id = p.user_id
+             LEFT JOIN companies c ON l.company_id = c.id
              WHERE l.user_id = $1`;
     params = [queryId];
     paramCount = 1;
@@ -152,6 +433,7 @@ export const getLocationLogs = async (req, res) => {
     userId: log.user_id,
     email: log.email,
     agentName: log.agentName, // Added for admin clarity
+    companyName: log.companyName, // ✅ Added for super admin visibility
     latitude: log.latitude,
     longitude: log.longitude,
     accuracy: log.accuracy,
@@ -297,5 +579,56 @@ export const getDailySummary = async (req, res) => {
     meetings,
     expenses,
     locationLogs: logs
+  });
+};
+
+export const getTrackingStateEndpoint = async (req, res) => {
+  const trackingState = getTrackingState();
+  const isPaused = isTrackingPausedState();
+  
+  res.json({
+    isActive: trackingState.isActive,
+    isPaused: isPaused,
+    wasIdle: trackingState.wasIdle,
+    lastValidLocation: trackingState.lastValidLocation ? {
+      lat: trackingState.lastValidLocation.lat,
+      lng: trackingState.lastValidLocation.lng,
+      timestamp: trackingState.lastValidTimestamp
+    } : null,
+    consecutiveInvalid: trackingState.consecutiveInvalid
+  });
+};
+
+export const resumeTrackingFromPauseEndpoint = async (req, res) => {
+  const { latitude, longitude } = req.body;
+  
+  if (!latitude || !longitude) {
+    return res.status(400).json({ error: "LocationRequired" });
+  }
+  
+  const trackingState = getTrackingState();
+  const wasPaused = isTrackingPausedState();
+  
+  if (!wasPaused) {
+    return res.status(400).json({ error: "NotPaused", message: "Tracking is not currently paused" });
+  }
+  
+  const lastValid = trackingState.lastValidLocation;
+  if (lastValid) {
+    const distance = haversineDistance(latitude, longitude, lastValid.lat, lastValid.lng);
+    
+    if (distance < TRACKING_CONFIG.MIN_DISTANCE_METERS) {
+      return res.status(400).json({ 
+        error: "InsufficientMovement", 
+        message: `Need to move at least ${TRACKING_CONFIG.MIN_DISTANCE_METERS}m to resume. Current: ${distance.toFixed(0)}m`
+      });
+    }
+  }
+  
+  resumeTrackingFromPause();
+  
+  res.json({
+    message: "TrackingResumed",
+    resumed: true
   });
 };

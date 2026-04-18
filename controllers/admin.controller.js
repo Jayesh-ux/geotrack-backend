@@ -1580,3 +1580,182 @@ export const getLocationReport = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ============================================
+// TOGGLE AGENT STATUS (Enable/Disable)
+// ============================================
+export const toggleAgentStatus = async (req, res) => {
+  const { userId } = req.params;
+  const { isActive } = req.body;
+  
+  try {
+    // Security: Only allow toggling agents within same company (or superadmin)
+    let query, params;
+    
+    if (req.isSuperAdmin) {
+      // Superadmin can toggle any agent
+      query = `
+        UPDATE users 
+        SET is_active = $1, updated_at = NOW() 
+        WHERE id = $2 AND is_admin = false 
+        RETURNING id, email, is_active, company_id
+      `;
+      params = [isActive, userId];
+    } else {
+      // Admin can only toggle agents in their company
+      query = `
+        UPDATE users 
+        SET is_active = $1, updated_at = NOW() 
+        WHERE id = $2 AND company_id = $3 AND is_admin = false 
+        RETURNING id, email, is_active, company_id
+      `;
+      params = [isActive, userId, req.companyId];
+    }
+    
+    const result = await pool.query(query, params);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        error: "AgentNotFound", 
+        message: "Agent not found or you don't have permission to modify this agent" 
+      });
+    }
+    
+    console.log(`✅ Agent ${result.rows[0].email} status changed to is_active=${isActive}`);
+    
+    res.json({
+      message: "Agent status updated",
+      agent: {
+        id: result.rows[0].id,
+        email: result.rows[0].email,
+        isActive: result.rows[0].is_active
+      }
+    });
+  } catch (err) {
+    console.error("Error toggling agent status:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ============================================
+// SERVICES DASHBOARD STATS
+// ============================================
+export const getServicesDashboard = async (req, res) => {
+  try {
+    // RBAC: Filter by company for non-superadmins
+    let whereClause = '';
+    let params = [];
+    
+    if (req.isSuperAdmin && req.query.companyId) {
+      // Super admin can view specific company
+      whereClause = 'WHERE s.company_id = $1';
+      params = [req.query.companyId];
+    } else if (!req.isSuperAdmin) {
+      // Regular admin sees only their company
+      whereClause = 'WHERE s.company_id = $1';
+      params = [req.companyId];
+    }
+    // Superadmin with no companyId sees all
+    
+    const query = `
+      SELECT
+        COUNT(s.id) as total_services,
+        COALESCE(SUM(CAST(s.price AS DECIMAL)), 0) as total_revenue,
+        COUNT(CASE WHEN s.status = 'active' THEN 1 END) as active_services,
+        COUNT(CASE WHEN s.status = 'expired' THEN 1 END) as expired_services,
+        COUNT(CASE WHEN s.status = 'inactive' THEN 1 END) as inactive_services,
+        COUNT(CASE WHEN s.expiry_date IS NOT NULL AND s.expiry_date <= CURRENT_DATE + INTERVAL '30 days' AND s.expiry_date > CURRENT_DATE AND s.status = 'active' THEN 1 END) as expiring_soon
+      FROM client_services s
+      ${whereClause}
+    `;
+    
+    const result = await pool.query(query, params);
+    const stats = result.rows[0];
+    
+    res.json({
+      totalServices: parseInt(stats.total_services) || 0,
+      totalRevenue: parseFloat(stats.total_revenue) || 0,
+      activeServices: parseInt(stats.active_services) || 0,
+      expiredServices: parseInt(stats.expired_services) || 0,
+      inactiveServices: parseInt(stats.inactive_services) || 0,
+      expiringSoon: parseInt(stats.expiring_soon) || 0
+    });
+  } catch (err) {
+    console.error("Error fetching services dashboard:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ============================================
+// CREATE CLIENT SERVICE (Admin only)
+// ============================================
+export const createClientService = async (req, res) => {
+  const { serviceName, description, status, startDate, expiryDate, price, clientId, agentId } = req.body;
+  
+  try {
+    if (!serviceName) {
+      return res.status(400).json({ error: "ServiceNameRequired", message: "Service name is required" });
+    }
+    
+    if (!clientId) {
+      return res.status(400).json({ error: "ClientRequired", message: "Client ID is required" });
+    }
+    
+    // RBAC: Ensure company context
+    const companyId = req.companyId || req.query.companyId;
+    
+    if (!companyId && !req.isSuperAdmin) {
+      return res.status(403).json({ error: "CompanyContextRequired", message: "Unable to create service. Please ensure you are logged into a company account." });
+    }
+    
+    // If admin (non-superadmin), use their company
+    // If superadmin, they should specify company or we use the client's company
+    let finalCompanyId = companyId;
+    if (req.isSuperAdmin && req.body.companyId) {
+      finalCompanyId = req.body.companyId;
+    }
+    
+    // Get client's company if not provided
+    if (!finalCompanyId && clientId) {
+      const clientResult = await pool.query(
+        "SELECT company_id FROM clients WHERE id = $1",
+        [clientId]
+      );
+      if (clientResult.rows.length > 0) {
+        finalCompanyId = clientResult.rows[0].company_id;
+      }
+    }
+    
+    if (!finalCompanyId) {
+      return res.status(400).json({ error: "CompanyRequired", message: "Could not determine company for this service" });
+    }
+    
+    const result = await pool.query(`
+      INSERT INTO client_services (
+        service_name, description, status, start_date, expiry_date, 
+        price, client_id, agent_id, company_id, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      RETURNING id, service_name, status, client_id, agent_id, company_id
+    `, [
+      serviceName,
+      description || null,
+      status || 'active',
+      startDate || null,
+      expiryDate || null,
+      price || null,
+      clientId,
+      agentId || null,
+      finalCompanyId
+    ]);
+    
+    console.log(`✅ Created service: ${serviceName} for client ${clientId}`);
+    
+    res.status(201).json({
+      message: "Service created successfully",
+      service: result.rows[0]
+    });
+  } catch (err) {
+    console.error("Error creating client service:", err);
+    res.status(500).json({ error: err.message });
+  }
+};

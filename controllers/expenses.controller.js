@@ -1,7 +1,16 @@
 // controllers/expenses.controller.js
 // MERGED: Multi-leg expenses + Company filtering + Trial user support
+// UPDATED: Session validation + journey validation + train validation
 
 import { pool } from "../db.js";
+import {
+  SESSION_STATES,
+  TRACKING_CONFIG,
+  haversineDistance,
+  validateSessionActive,
+  validateExpenseFull,
+  buildMultiLegChaining
+} from "../services/tracking.service.js";
 
 // ============================================
 // TRANSFORMATION HELPERS
@@ -10,6 +19,9 @@ import { pool } from "../db.js";
 const transformExpenseRow = (row) => ({
   id: row.id,
   user_id: row.user_id,
+  agentEmail: row.agentEmail, // ✅ Added for super admin visibility
+  agentName: row.agentName, // ✅ Added for super admin visibility
+  companyName: row.companyName, // ✅ Added for super admin visibility
   trip_name: row.trip_name,
   is_multi_leg: row.is_multi_leg || false,
   start_location: row.start_location,
@@ -123,6 +135,36 @@ export const createExpense = async (req, res) => {
     });
   }
 
+  const sessionValidation = await validateSessionActive(req.user.id, req.companyId);
+  if (!sessionValidation.valid) {
+    console.error("❌ Session not active for expense submission");
+    return res.status(403).json(sessionValidation);
+  }
+
+  const expenseValidation = await validateExpenseFull(req.user.id, req.companyId, finalTravelDate);
+  if (!expenseValidation.valid) {
+    console.error(`❌ Expense validation failed: ${expenseValidation.error}`);
+    return res.status(400).json(expenseValidation);
+  }
+  console.log(`✅ Expense validation passed: ${expenseValidation.validLogs} valid logs, ${expenseValidation.totalDistance.toFixed(0)}m distance`);
+
+  const distanceMeters = parseFloat(finalDistanceKm) * 1000;
+  if (distanceMeters < TRACKING_CONFIG.MIN_EXPENSE_DISTANCE_METERS) {
+    console.error(`❌ Distance too short: ${distanceMeters}m (min: ${TRACKING_CONFIG.MIN_EXPENSE_DISTANCE_METERS}m)`);
+    return res.status(400).json({ 
+      error: "DistanceTooShort",
+      message: `Distance must be at least ${TRACKING_CONFIG.MIN_EXPENSE_DISTANCE_METERS} meters to submit expense`
+    });
+  }
+
+  const transportModes = ["Car", "Bike", "Taxi", "Train", "Bus", "Flight"];
+  if (finalTransportMode && !transportModes.includes(finalTransportMode)) {
+    return res.status(400).json({ 
+      error: "InvalidTransportMode",
+      message: "Transport mode must be: Car, Bike, Taxi, Train, Bus, or Flight"
+    });
+  }
+
   const client = await pool.connect();
 
   try {
@@ -184,7 +226,10 @@ export const createExpense = async (req, res) => {
     // If multi-leg, insert leg records
     if (isMultiLeg) {
       console.log("📄 Inserting legs...");
-      for (const leg of legs) {
+      const chainedLegs = buildMultiLegChaining(legs);
+      
+      for (let i = 0; i < chainedLegs.length; i++) {
+        const leg = chainedLegs[i];
         const legResult = await client.query(
           `INSERT INTO trip_legs
           (expense_id, leg_number, start_location, end_location, 
@@ -193,7 +238,7 @@ export const createExpense = async (req, res) => {
           RETURNING *`,
           [
             expense.id,
-            leg.leg_number || leg.legNumber,
+            i + 1,
             leg.start_location || leg.startLocation,
             leg.end_location || leg.endLocation,
             leg.distance_km || leg.distanceKm,
@@ -203,7 +248,7 @@ export const createExpense = async (req, res) => {
           ]
         );
         legsData.push(transformLegRow(legResult.rows[0]));
-        console.log(`  ✅ Leg ${leg.leg_number || leg.legNumber} inserted`);
+        console.log(`  ✅ Leg ${i + 1} inserted: ${leg.start_location || leg.startLocation} → ${leg.end_location || leg.endLocation}`);
       }
     }
 
@@ -246,19 +291,50 @@ export const getMyExpenses = async (req, res) => {
   const companyId = req.user?.companyId || req.companyId;
 
   if (userId === 'all' && (req.user.isAdmin || req.isSuperAdmin)) {
-    // Admin fetching all company expenses
-    query = `SELECT * FROM trip_expenses WHERE company_id = $1`;
-    params = [companyId];
-    count = 1;
+    // Admin/SuperAdmin fetching all expenses (company or all)
+    if (req.isSuperAdmin) {
+      query = `SELECT e.*, u.email as "agentEmail", p.full_name as "agentName", c.name as "companyName"
+                FROM trip_expenses e
+                LEFT JOIN users u ON e.user_id = u.id
+                LEFT JOIN profiles p ON u.id = p.user_id
+                LEFT JOIN companies c ON e.company_id = c.id
+                WHERE 1=1`;
+      params = [];
+    } else {
+      query = `SELECT e.*, u.email as "agentEmail", p.full_name as "agentName", c.name as "companyName"
+                FROM trip_expenses e
+                LEFT JOIN users u ON e.user_id = u.id
+                LEFT JOIN profiles p ON u.id = p.user_id
+                LEFT JOIN companies c ON e.company_id = c.id
+                WHERE e.company_id = $1`;
+      params = [companyId];
+    }
+    count = req.isSuperAdmin ? 0 : 1;
   } else {
     // Single user expenses (default or specific ID)
     let queryId = req.user.id;
     if (userId && (req.user.isAdmin || req.isSuperAdmin)) {
       queryId = userId;
     }
-    query = `SELECT * FROM trip_expenses WHERE user_id = $1 AND company_id = $2`;
-    params = [queryId, companyId];
-    count = 2;
+    if (req.isSuperAdmin) {
+      query = `SELECT e.*, u.email as "agentEmail", p.full_name as "agentName", c.name as "companyName"
+                FROM trip_expenses e
+                LEFT JOIN users u ON e.user_id = u.id
+                LEFT JOIN profiles p ON u.id = p.user_id
+                LEFT JOIN companies c ON e.company_id = c.id
+                WHERE e.user_id = $1`;
+      params = [queryId];
+      count = 1;
+    } else {
+      query = `SELECT e.*, u.email as "agentEmail", p.full_name as "agentName", c.name as "companyName"
+                FROM trip_expenses e
+                LEFT JOIN users u ON e.user_id = u.id
+                LEFT JOIN profiles p ON u.id = p.user_id
+                LEFT JOIN companies c ON e.company_id = c.id
+                WHERE e.user_id = $1 AND e.company_id = $2`;
+      params = [queryId, companyId];
+      count = 2;
+    }
   }
 
   if (startDate) {
