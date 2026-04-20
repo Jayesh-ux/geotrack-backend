@@ -83,6 +83,32 @@ export const createLocationLog = async (req, res) => {
     });
   }
 
+  // AUTO-CREATE SESSION if CLOCK_IN and no active session
+  if (finalActivity === "CLOCK_IN") {
+    try {
+      const existingSession = await pool.query(
+        `SELECT id FROM user_tracking_sessions 
+         WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'`,
+        [req.user.id, req.companyId]
+      );
+      
+      if (existingSession.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO user_tracking_sessions (user_id, company_id, session_state, started_at, clock_in_location)
+           VALUES ($1, $2, $3, NOW(), $4)`,
+          [req.user.id, req.companyId, SESSION_STATES.ACTIVE, JSON.stringify({ lat: latitude, lng: longitude, pincode })]
+        );
+        await pool.query(
+          `UPDATE users SET current_session_id = (SELECT id FROM user_tracking_sessions WHERE user_id = $1 AND company_id = $2 ORDER BY started_at DESC LIMIT 1), session_state = $3 WHERE id = $1`,
+          [req.user.id, req.companyId, SESSION_STATES.ACTIVE]
+        );
+        console.log(`✅ AUTO-CREATED SESSION for user ${req.user.id} on CLOCK_IN`);
+      }
+    } catch (e) {
+      console.error(`❌ Failed to create session on CLOCK_IN: ${e.message}`);
+    }
+  }
+
   const now = new Date();
   let distanceDelta = null;
   let speedKmh = null;

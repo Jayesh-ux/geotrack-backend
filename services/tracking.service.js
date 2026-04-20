@@ -323,10 +323,15 @@ export async function validateLocationLog(userId, companyId, latitude, longitude
     };
   }
   
-  const sessionValidation = await validateSessionActive(userId, companyId);
-  if (!sessionValidation.valid) {
-    errors.push({ error: sessionValidation.error, message: sessionValidation.message });
-    return { valid: false, errors, warnings };
+  // ALLOW CLOCK_IN and CLOCK_OUT without session validation - these CREATE/end sessions
+  const isSessionActivity = activity === "CLOCK_IN" || activity === "CLOCK_OUT";
+  
+  if (!isSessionActivity) {
+    const sessionValidation = await validateSessionActive(userId, companyId);
+    if (!sessionValidation.valid) {
+      errors.push({ error: sessionValidation.error, message: sessionValidation.message });
+      return { valid: false, errors, warnings };
+    }
   }
   
   const batteryValidation = validateBatteryData(battery, timestamp);
