@@ -17,6 +17,7 @@ router.get("/stats", asyncHandler(adminController.getDashboardStats));
 router.get("/location-logs/:userId", asyncHandler(adminController.getUserLocationLogs));
 router.get("/clock-status/:userId", asyncHandler(adminController.getClockStatus));
 router.get("/expenses/summary", asyncHandler(adminController.getExpensesSummary));
+router.get("/meetings/summary/all", asyncHandler(adminController.getAllUsersMeetingsSummary));
 router.get("/user-meetings/:userId", asyncHandler(adminController.getUserMeetings));
 router.get("/user-expenses/:userId", asyncHandler(adminController.getUserExpenses));
 router.get("/check", asyncHandler(adminController.checkAdminStatus));

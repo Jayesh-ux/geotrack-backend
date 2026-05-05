@@ -388,6 +388,26 @@ export const getClockStatus = async (req, res) => {
   });
 };
 
+export const getAllUsersMeetingsSummary = async (req, res) => {
+  const companyFilter = req.isSuperAdmin ? '' : 'AND u.company_id = $1';
+  const params = req.isSuperAdmin ? [] : [req.companyId];
+
+  const result = await pool.query(`
+    SELECT 
+      u.id,
+      COUNT(m.id) AS total_meetings,
+      COUNT(CASE WHEN m.status = 'COMPLETED' THEN 1 END) AS completed_meetings,
+      COUNT(CASE WHEN m.status = 'IN_PROGRESS' THEN 1 END) AS in_progress_meetings
+    FROM users u
+    LEFT JOIN meetings m ON m.user_id = u.id ${!req.isSuperAdmin ? 'AND m.company_id = $1' : ''}
+    ${companyFilter}
+    GROUP BY u.id
+    ORDER BY u.id
+  `, params);
+
+  res.json({ summary: result.rows });
+};
+
 export const getExpensesSummary = async (req, res) => {
   // ✅ UPDATED: Add company_id filter
   const companyFilter = req.isSuperAdmin ? '' : 'WHERE u.company_id = $1';

@@ -16,6 +16,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { authenticateToken } from "./middleware/auth.js";
 import { attachCompanyContext } from "./middleware/company.js";
 import { attachPlanFeatures } from "./middleware/featureAuth.js";
+import { autoClockOutStaleSessions, cleanupDuplicateSessions } from "./services/session-cleanup.service.js";
 
 // Route imports
 import authRoutes from "./routes/auth.routes.js";
@@ -137,7 +138,7 @@ app.use('/api/manual-clients',
 // ============================================
 // ADMIN ROUTES (Company Admin + Plan Features)
 // ============================================
-app.use("/admin", 
+app.use("/api/admin", 
   authenticateToken, 
   attachCompanyContext, 
   attachPlanFeatures,  // ← NEW
@@ -195,9 +196,24 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🏢 Multi-company mode enabled`);
   console.log(`📍 Pincode-based filtering enabled`);
-  console.log(`💎 Plan-based limitations enabled`);  // ← NEW
+  console.log(`💎 Plan-based limitations enabled`);
   console.log(`📦 Request body limit: 10mb`);
   
-  // Background geocoding disabled - uncomment if needed
-  // startBackgroundGeocode();
+  // Start periodic session cleanup (every hour)
+  setInterval(async () => {
+    try {
+      const result = await autoClockOutStaleSessions();
+      if (result.staleSessions > 0 || result.noLogsSessions > 0) {
+        console.log(`🧹 Auto clock-out: closed ${result.staleSessions} stale + ${result.noLogsSessions} no-log sessions`);
+      }
+    } catch (e) {
+      console.error("❌ Auto clock-out failed:", e.message);
+    }
+  }, 3600000); // Every hour
+
+  // Run cleanup on startup too
+  autoClockOutStaleSessions().catch(e => console.error("❌ Initial cleanup failed:", e.message));
+  cleanupDuplicateSessions().catch(e => console.error("❌ Duplicate cleanup failed:", e.message));
+
+  console.log(`⏰ Auto clock-out scheduled (every 1h)`);
 });

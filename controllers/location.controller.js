@@ -89,27 +89,37 @@ export const createLocationLog = async (req, res) => {
 
   // AUTO-CREATE SESSION if CLOCK_IN and no active session
   if (finalActivity === "CLOCK_IN") {
+    const client = await pool.connect();
     try {
-      const existingSession = await pool.query(
+      await client.query('BEGIN');
+
+      const existingSession = await client.query(
         `SELECT id FROM user_tracking_sessions 
-         WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'`,
+         WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'
+         FOR UPDATE SKIP LOCKED`,
         [req.user.id, req.companyId]
       );
       
       if (existingSession.rows.length === 0) {
-        await pool.query(
+        await client.query(
           `INSERT INTO user_tracking_sessions (user_id, company_id, session_state, started_at, clock_in_location)
            VALUES ($1, $2, $3, NOW(), $4)`,
           [req.user.id, req.companyId, SESSION_STATES.ACTIVE, JSON.stringify({ lat: latitude, lng: longitude, pincode })]
         );
-        await pool.query(
+        await client.query(
           `UPDATE users SET current_session_id = (SELECT id FROM user_tracking_sessions WHERE user_id = $1 AND company_id = $2 ORDER BY started_at DESC LIMIT 1), session_state = $3 WHERE id = $1`,
           [req.user.id, req.companyId, SESSION_STATES.ACTIVE]
         );
+        await client.query('COMMIT');
         console.log(`✅ AUTO-CREATED SESSION for user ${req.user.id} on CLOCK_IN`);
+      } else {
+        await client.query('COMMIT'); // No action needed, session exists
       }
     } catch (e) {
+      await client.query('ROLLBACK');
       console.error(`❌ Failed to create session on CLOCK_IN: ${e.message}`);
+    } finally {
+      client.release();
     }
   }
 
@@ -273,71 +283,121 @@ export const clockIn = async (req, res) => {
     console.warn("Geocoding failed");
   }
 
-  const sessionResult = await pool.query(
-    `INSERT INTO user_tracking_sessions 
-     (user_id, company_id, session_state, started_at, clock_in_location)
-     VALUES ($1, $2, $3, NOW(), $4)
-     RETURNING *`,
-    [req.user.id, req.companyId, SESSION_STATES.ACTIVE, JSON.stringify({ lat: latitude, lng: longitude, pincode })]
-  );
+  // ✅ FIX: Check for existing active session FIRST (in transaction)
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  const session = sessionResult.rows[0];
+    const existingSession = await client.query(
+      `SELECT id, started_at FROM user_tracking_sessions 
+       WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'
+       FOR UPDATE SKIP LOCKED`,  // Row-level lock to prevent race conditions
+      [req.user.id, req.companyId]
+    );
 
-  await pool.query(
-    `UPDATE users SET current_session_id = $1, session_state = $2 
-     WHERE id = $3`,
-    [session.id, SESSION_STATES.ACTIVE, req.user.id]
-  );
-
-  sessionState = SESSION_STATES.ACTIVE;
-
-  res.status(201).json({
-    message: "ClockedIn",
-    session: {
-      id: session.id,
-      state: session.session_state,
-      startedAt: session.started_at
+    if (existingSession.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        error: "AlreadyClockedIn",
+        message: "User already has an active session",
+        session: {
+          id: existingSession.rows[0].id,
+          startedAt: existingSession.rows[0].started_at
+        }
+      });
     }
-  });
+
+    const sessionResult = await client.query(
+      `INSERT INTO user_tracking_sessions 
+       (user_id, company_id, session_state, started_at, clock_in_location)
+       VALUES ($1, $2, $3, NOW(), $4)
+       RETURNING *`,
+      [req.user.id, req.companyId, SESSION_STATES.ACTIVE, JSON.stringify({ lat: latitude, lng: longitude, pincode })]
+    );
+
+    const session = sessionResult.rows[0];
+
+    await client.query(
+      `UPDATE users SET current_session_id = $1, session_state = $2 
+       WHERE id = $3`,
+      [session.id, SESSION_STATES.ACTIVE, req.user.id]
+    );
+
+    await client.query('COMMIT');
+
+    sessionState = SESSION_STATES.ACTIVE;
+
+    res.status(201).json({
+      message: "ClockedIn",
+      session: {
+        id: session.id,
+        state: session.session_state,
+        startedAt: session.started_at
+      }
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(`❌ Clock-in failed: ${e.message}`);
+    res.status(500).json({ error: "ClockInFailed", message: e.message });
+  } finally {
+    client.release();
+  }
 };
 
 export const clockOut = async (req, res) => {
   const { latitude, longitude } = req.body;
 
-  const currentSession = await pool.query(
-    `SELECT id FROM user_tracking_sessions 
-     WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'
-     ORDER BY started_at DESC LIMIT 1`,
-    [req.user.id, req.companyId]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  if (currentSession.rows.length === 0) {
-    return res.status(400).json({ error: "NoActiveSession" });
+    const currentSession = await client.query(
+      `SELECT id, started_at FROM user_tracking_sessions 
+       WHERE user_id = $1 AND company_id = $2 AND session_state = 'ACTIVE'
+       ORDER BY started_at DESC LIMIT 1
+       FOR UPDATE SKIP LOCKED`,
+      [req.user.id, req.companyId]
+    );
+
+    if (currentSession.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: "NoActiveSession" });
+    }
+
+    const sessionId = currentSession.rows[0].id;
+
+    await client.query(
+      `UPDATE user_tracking_sessions 
+       SET session_state = $1, ended_at = NOW(), clock_out_location = $2
+       WHERE id = $3`,
+      [SESSION_STATES.ENDED, JSON.stringify({ lat: latitude, lng: longitude }), sessionId]
+    );
+
+    await client.query(
+      `UPDATE users SET session_state = $1, current_session_id = NULL 
+       WHERE id = $2`,
+      [SESSION_STATES.ENDED, req.user.id]
+    );
+
+    await client.query('COMMIT');
+
+    sessionState = SESSION_STATES.ENDED;
+    lastLogTimestamp = null;
+    lastLogLat = null;
+    lastLogLng = null;
+    stopTracking();
+
+    res.json({
+      message: "ClockedOut",
+      sessionState: SESSION_STATES.ENDED
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(`❌ Clock-out failed: ${e.message}`);
+    res.status(500).json({ error: "ClockOutFailed", message: e.message });
+  } finally {
+    client.release();
   }
-
-  await pool.query(
-    `UPDATE user_tracking_sessions 
-     SET session_state = $1, ended_at = NOW(), clock_out_location = $2
-     WHERE id = $3`,
-    [SESSION_STATES.ENDED, JSON.stringify({ lat: latitude, lng: longitude }), currentSession.rows[0].id]
-  );
-
-  await pool.query(
-    `UPDATE users SET session_state = $1, current_session_id = NULL 
-     WHERE id = $2`,
-    [SESSION_STATES.ENDED, req.user.id]
-  );
-
-  sessionState = SESSION_STATES.ENDED;
-  lastLogTimestamp = null;
-  lastLogLat = null;
-  lastLogLng = null;
-  stopTracking();
-
-  res.json({
-    message: "ClockedOut",
-    sessionState: SESSION_STATES.ENDED
-  });
 };
 
 export const pauseSession = async (req, res) => {
