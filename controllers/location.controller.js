@@ -59,6 +59,10 @@ export const createLocationLog = async (req, res) => {
     const error = validationResult.errors[0];
     
     const idleStateFlag = error.error === "IdleState" || error.error === "TrackingPaused";
+    const transportMode = getTransportModeFromRequest(req.body);
+    
+    let pincode = null;
+    try { pincode = await getPincodeFromCoordinates(latitude, longitude); } catch (e) {}
     
     const result = await pool.query(
       `INSERT INTO location_logs 
@@ -70,7 +74,7 @@ export const createLocationLog = async (req, res) => {
       [
         req.user.id, latitude, longitude, accuracy ?? null, finalActivity || null,
         finalNotes || null, pincode, battery ?? null, req.companyId,
-        null, null, false, error.error, transportMode, batteryData.batteryStale || false,
+        null, null, false, error.error, transportMode, false,
         getLocationConfidence(accuracy), validationResult.isInitial || false, error.error, idleStateFlag
       ]
     );
@@ -160,7 +164,7 @@ export const createLocationLog = async (req, res) => {
      (user_id, latitude, longitude, accuracy, activity, notes, pincode, battery, company_id, 
       distance_delta, speed_kmh, validated, validation_reason, transport_mode, battery_stale,
       location_confidence, is_initial, rejection_reason, idle_state_flag)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
      RETURNING *`,
     [
       req.user.id, latitude, longitude, accuracy ?? null, finalActivity || null,
