@@ -119,7 +119,7 @@ export const createLocationLog = async (req, res) => {
   const lastValid = getLastValidLocation();
   
   if (lastValid && finalActivity !== "CLOCK_IN") {
-    const timeDiffMs = now - lastValidTimestamp;
+    const timeDiffMs = now - (lastValid.timestamp || now);
     const movementCheck = isValidMovement(latitude, longitude, lastValid.lat, lastValid.lng, timeDiffMs, accuracy);
 
     if (!movementCheck.valid) {
@@ -438,13 +438,13 @@ export const getLocationLogs = async (req, res) => {
   if (startDate) {
     paramCount++;
     query += ` AND l.timestamp >= $${paramCount}`;
-    params.push(startDate);
+    const parsedStartDate = startDate.includes('T') ? startDate : `${startDate} 00:00:00.000`;
+    params.push(parsedStartDate);
   }
 
   if (endDate) {
     paramCount++;
     query += ` AND l.timestamp <= $${paramCount}`;
-    // If it's just "YYYY-MM-DD", make it end of day to include all logs
     const parsedEndDate = endDate.includes('T') ? endDate : `${endDate} 23:59:59.999`;
     params.push(parsedEndDate);
   }
