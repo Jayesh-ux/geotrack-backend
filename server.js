@@ -1,9 +1,9 @@
-// server.js
+// server.js - VERSION 2.1.1
 console.log("==========================================");
-console.log("🚀 BACKEND STARTING UP...");
+console.log("🚀 BACKEND STARTING UP - VERSION 2.1.1");
 console.log("📅 TIME:", new Date().toISOString());
-console.log("🔌 PORT:", process.env.PORT || 5000);
 console.log("🌍 NODE_ENV:", process.env.NODE_ENV);
+console.log("🔌 PORT:", process.env.PORT || 5000);
 console.log("==========================================");
 
 import express from "express";
