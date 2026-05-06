@@ -518,42 +518,47 @@ export const getLocationLogs = async (req, res) => {
   query += ` ORDER BY l.timestamp DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
   params.push(parseInt(limit), parseInt(offset));
 
-  const result = await pool.query(query, params);
-
-   const mappedLogs = result.rows.map(log => ({
-    id: log.id,
-    userId: log.user_id,
-    email: log.email,
-    agentName: log.agentName, // Added for admin clarity
-    companyName: log.companyName, // ✅ Added for super admin visibility
-    latitude: log.latitude,
-    longitude: log.longitude,
-    accuracy: log.accuracy,
-    battery: log.battery,
-    activity: log.activity,
-    notes: log.notes,
-    markActivity: log.activity, // Added for Android App compatibility
-    markNotes: log.notes, // Added for Android App compatibility
-    pincode: log.pincode,
-    timestamp: log.timestamp,
-    distanceDelta: log.distance_delta,
-    speedKmh: log.speed_kmh,
-    validated: log.validated,
-    validationReason: log.validation_reason,
-    locationConfidence: log.location_confidence,
-    isInitial: log.is_initial,
-    rejectionReason: log.rejection_reason,
-    idleStateFlag: log.idle_state_flag,
-    imageUrls: log.image_urls || [] // ✅ NEW: Return image_urls from database
-  }));
-
-  res.json({
-    logs: mappedLogs,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-    },
-  });
+  try {
+    const result = await pool.query(query, params);
+  
+    const mappedLogs = result.rows.map(log => ({
+      id: log.id,
+      userId: log.user_id,
+      email: log.email,
+      agentName: log.agentName, // Added for admin clarity
+      companyName: log.companyName, // ✅ Added for super admin visibility
+      latitude: log.latitude,
+      longitude: log.longitude,
+      accuracy: log.accuracy,
+      battery: log.battery,
+      activity: log.activity,
+      notes: log.notes,
+      markActivity: log.activity, // Added for Android App compatibility
+      markNotes: log.notes, // Added for Android App compatibility
+      pincode: log.pincode,
+      timestamp: log.timestamp,
+      distanceDelta: log.distance_delta,
+      speedKmh: log.speed_kmh,
+      validated: log.validated,
+      validationReason: log.validation_reason,
+      locationConfidence: log.location_confidence,
+      isInitial: log.is_initial,
+      rejectionReason: log.rejection_reason,
+      idleStateFlag: log.idle_state_flag,
+      imageUrls: log.image_urls || [] // ✅ NEW: Return image_urls from database
+    }));
+  
+    res.json({
+      logs: mappedLogs,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+      },
+    });
+  } catch (error) {
+    console.error(`❌ getLocationLogs error: ${error.message}`);
+    res.status(500).json({ error: error.message || "Database query failed" });
+  }
 };
 
 export const getClockIn = async (req, res) => {
