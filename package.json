@@ -1,6 +1,6 @@
 {
   "name": "auth-backend",
-  "version": "1.0.0",
+  "version": "2.1.1",
   "description": "Authentication backend with PostgreSQL",
   "main": "server.js",
   "type": "module",
