@@ -166,7 +166,16 @@ CREATE TABLE IF NOT EXISTS "location_logs" (
   "timestamp" TIMESTAMPTZ DEFAULT now(),
   "pincode" VARCHAR(10),
   "battery" integer,
-  "company_id" uuid NOT NULL
+  "company_id" uuid NOT NULL,
+  "distance_delta" double precision,
+  "speed_kmh" double precision,
+  "validated" boolean DEFAULT true,
+  "validation_reason" text,
+  "location_confidence" VARCHAR(20),
+  "is_initial" boolean DEFAULT false,
+  "rejection_reason" text,
+  "idle_state_flag" boolean DEFAULT false,
+  "image_urls" JSONB DEFAULT '[]'::jsonb
 );
 
 CREATE TABLE IF NOT EXISTS "sessions" (
