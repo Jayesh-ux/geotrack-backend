@@ -5,7 +5,7 @@ services:
     plan: free
     buildCommand: "npm install"
     # Run migrations and seeding before starting the server
-    startCommand: "node scripts/runMigration.js && node utils/seedPincodes.js && npm start"
+    startCommand: "npm start"
     envVars:
       - key: DATABASE_URL
         value: postgresql://geotrack_dbtest_user:DpQrv5nopeTKqIUNQB6pQYeCdJgIlOxA@dpg-d7grg6po3t8c7392p2tg-a.oregon-postgres.render.com:5432/geotrack_dbtest
