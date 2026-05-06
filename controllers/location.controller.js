@@ -35,7 +35,7 @@ let lastLogLng = null;
 let sessionState = SESSION_STATES.NOT_STARTED;
 
 export const createLocationLog = async (req, res) => {
-  const { latitude, longitude, accuracy, activity, notes, battery, markActivity, markNotes, sessionState: clientSessionState, timestamp: clientTimestamp } = req.body;
+  const { latitude, longitude, accuracy, activity, notes, battery, markActivity, markNotes, sessionState: clientSessionState, timestamp: clientTimestamp, image_urls: imageUrls } = req.body;
 
   const finalActivity = activity || markActivity;
   const finalNotes = notes || markNotes;
@@ -68,14 +68,15 @@ export const createLocationLog = async (req, res) => {
       `INSERT INTO location_logs 
        (user_id, latitude, longitude, accuracy, activity, notes, pincode, battery, company_id, 
         distance_delta, speed_kmh, validated, validation_reason, transport_mode, battery_stale,
-        location_confidence, is_initial, rejection_reason, idle_state_flag)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        location_confidence, is_initial, rejection_reason, idle_state_flag, image_urls)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING *`,
       [
         req.user.id, latitude, longitude, accuracy ?? null, finalActivity || null,
         finalNotes || null, pincode, battery ?? null, req.companyId,
         null, null, false, error.error, transportMode, false,
-        getLocationConfidence(accuracy), validationResult.isInitial || false, error.error, idleStateFlag
+        getLocationConfidence(accuracy), validationResult.isInitial || false, error.error, idleStateFlag,
+        imageUrls ? JSON.stringify(imageUrls) : '[]'
       ]
     );
     
@@ -173,14 +174,15 @@ export const createLocationLog = async (req, res) => {
     `INSERT INTO location_logs 
      (user_id, latitude, longitude, accuracy, activity, notes, pincode, battery, company_id, 
       distance_delta, speed_kmh, validated, validation_reason, transport_mode, battery_stale,
-      location_confidence, is_initial, rejection_reason, idle_state_flag)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      location_confidence, is_initial, rejection_reason, idle_state_flag, image_urls)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      RETURNING *`,
     [
       req.user.id, latitude, longitude, accuracy ?? null, finalActivity || null,
       finalNotes || null, pincode, battery ?? null, req.companyId,
       distanceDelta, speedKmh, validated, validationReason, transportMode, batteryStale,
-      locationConfidence, isInitial, validationReason, idleStateFlag
+      locationConfidence, isInitial, validationReason, idleStateFlag,
+      imageUrls ? JSON.stringify(imageUrls) : '[]'
     ]
   );
 
@@ -518,7 +520,7 @@ export const getLocationLogs = async (req, res) => {
 
   const result = await pool.query(query, params);
 
-  const mappedLogs = result.rows.map(log => ({
+   const mappedLogs = result.rows.map(log => ({
     id: log.id,
     userId: log.user_id,
     email: log.email,
@@ -533,7 +535,16 @@ export const getLocationLogs = async (req, res) => {
     markActivity: log.activity, // Added for Android App compatibility
     markNotes: log.notes, // Added for Android App compatibility
     pincode: log.pincode,
-    timestamp: log.timestamp
+    timestamp: log.timestamp,
+    distanceDelta: log.distance_delta,
+    speedKmh: log.speed_kmh,
+    validated: log.validated,
+    validationReason: log.validation_reason,
+    locationConfidence: log.location_confidence,
+    isInitial: log.is_initial,
+    rejectionReason: log.rejection_reason,
+    idleStateFlag: log.idle_state_flag,
+    imageUrls: log.image_urls || [] // ✅ NEW: Return image_urls from database
   }));
 
   res.json({
