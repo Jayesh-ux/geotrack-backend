@@ -1,42 +1,50 @@
-import pool from './db.js';
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  host: 'dpg-d0t1njofte5s73b1r2dg-a.oregon-postgres.render.com',
+  port: 5432,
+  database: 'geotrack_oregon',
+  user: 'geotrack_oregon_user',
+  password: 'MOlSajtaHjQQPig1miFh8qFNLuwJbNc',
+  ssl: { rejectUnauthorized: false }
+});
 
 async function checkSchema() {
-    const client = await pool.connect();
-    try {
-        // Check location_logs columns
-        const cols = await client.query(`
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'location_logs'
-            ORDER BY ordinal_position
-        `);
-        console.log('=== location_logs columns ===');
-        cols.rows.forEach(c => console.log(`  ${c.column_name}: ${c.data_type}`));
-        
-        // Check meetings columns
-        const meetingCols = await client.query(`
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'meetings'
-            ORDER BY ordinal_position
-        `);
-        console.log('\n=== meetings columns ===');
-        meetingCols.rows.forEach(c => console.log(`  ${c.column_name}: ${c.data_type}`));
-        
-        // Check trip_expenses columns
-        const expenseCols = await client.query(`
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'trip_expenses'
-            ORDER BY ordinal_position
-        `);
-        console.log('\n=== trip_expenses columns ===');
-        expenseCols.rows.forEach(c => console.log(`  ${c.column_name}: ${c.data_type}`));
-        
-    } finally {
-        client.release();
-        await pool.end();
+  try {
+    // Check if image_urls column exists
+    const result = await pool.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'location_logs' 
+      AND column_name = 'image_urls'
+    `);
+    
+    if (result.rows.length > 0) {
+      console.log('✅ image_urls column EXISTS:', result.rows[0]);
+    } else {
+      console.log('❌ image_urls column DOES NOT EXIST - need to run migration');
+      console.log('Run this SQL:');
+      console.log('ALTER TABLE location_logs ADD COLUMN image_urls JSONB DEFAULT \'[]\'::jsonb;');
     }
+    
+    // Show all columns
+    const allColumns = await pool.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'location_logs' 
+      ORDER BY ordinal_position
+    `);
+    
+    console.log('\n📋 All columns in location_logs:');
+    allColumns.rows.forEach(row => {
+      console.log(`  - ${row.column_name}: ${row.data_type}`);
+    });
+    
+  } catch (err) {
+    console.error('❌ Error:', err.message);
+  } finally {
+    await pool.end();
+  }
 }
 
 checkSchema();
